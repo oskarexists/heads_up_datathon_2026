@@ -463,9 +463,9 @@ _TRACE = None                       # a list here records every decision (local 
 _BASE_M = (500, 400, 400, 400)      # candidate opponent holdings per street (preflop, flop, turn, river)
 _BASE_K = 240                       # holdings simulated per decision
 _BIG_K = 400                        # ... when the decision is big
-_OVERHEAD = 0.0006                  # seconds per request not visible from inside (JSON, HTTP), unloaded
+_OVERHEAD = 0.0004                  # seconds per request not visible from inside (JSON, HTTP), unloaded
 _REF_DRAW = (0.12e-3, 1.4e-6)       # draw cost on the development machine: fixed + per sample
-_BANK_SHARE = 0.65                  # fraction of the time bank we plan to use (margin for slow machines)
+_BANK_SHARE = 0.70                  # fraction of the time bank we plan to use (margin for slow machines)
 
 
 def _load(memory: dict) -> float:
