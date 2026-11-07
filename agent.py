@@ -634,7 +634,7 @@ def _cheap_decide(obs: Observation) -> Action:
 
 # Tunable strategy parameters (kept in one place so they can be swept in tests).
 _P = {
-    "fold_k": (0.12, 0.2, 0.25, 0.3),   # how much weaker the hands an opponent folds are, per street
+    "fold_k": (0.12, 0.3, 0.35, 0.4),   # how much weaker the hands an opponent folds are, per street
     "realise": (0.0, 0.05, 0.03, 0.0),  # equity lost when our bet is called on early streets
     "oop_pen": 0.02,                    # equity penalty out of position before the river
     "call_margin": (0.0, 0.05, 0.04, 0.02),  # extra equity needed to call, per street (future bets)
