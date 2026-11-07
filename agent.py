@@ -364,6 +364,22 @@ def _count(st: dict, street: int, kind: str, size: str = "s") -> None:
         post("fold_" + size, 0)
 
 
+def _decay_stats(st: dict, factor: float) -> None:
+    """Fade every counter so that recent hands matter most (adaptive opponents)."""
+    for key, val in st.items():
+        if key == "sd":
+            for pair in val.values():
+                pair[0] *= factor
+                pair[1] *= factor
+        elif isinstance(val, dict):
+            for pair in val.values():
+                pair[0] *= factor
+                pair[1] *= factor
+        else:
+            val[0] *= factor
+            val[1] *= factor
+
+
 def _f_pre(st: dict, key: str) -> float:
     k, n = st[key]
     return (k + 6.0 * _PRIORS[key]) / (n + 6.0)
@@ -574,7 +590,7 @@ def _new_hand_accounting(memory: dict) -> None:
     remaining_hands = max(1, memory["num_hands"] - memory["hands"])
     allowed = (_BANK_SHARE * memory["bank"] - spent) / remaining_hands
     ratio = allowed / max(memory["hand_cost"], 1e-5)
-    memory["scale"] = min(1.6, max(0.3, memory["scale"] * min(1.25, max(0.7, ratio))))
+    memory["scale"] = min(1.6, max(0.45, memory["scale"] * min(1.25, max(0.7, ratio))))
 
 
 _FIXED_SCALE = None                 # local testing only: pin the sample multiplier, ignore the clock
@@ -585,7 +601,7 @@ def _scale(memory: dict) -> float:
         return _FIXED_SCALE
     if _spent(memory) > 0.88 * memory["bank"]:
         return 0.15
-    return max(0.3, min(1.6, memory["scale"]))
+    return max(0.45, min(1.6, memory["scale"]))
 
 
 def _time_ok(memory: dict, share: float) -> bool:
@@ -621,7 +637,8 @@ _P = {
     "fold_k": (0.12, 0.2, 0.25, 0.3),   # how much weaker the hands an opponent folds are, per street
     "realise": (0.0, 0.05, 0.03, 0.0),  # equity lost when our bet is called on early streets
     "oop_pen": 0.02,                    # equity penalty out of position before the river
-    "call_margin": (0.0, 0.0, 0.0, 0.0),  # extra equity needed to call, per street
+    "call_margin": (0.0, 0.05, 0.04, 0.02),  # extra equity needed to call, per street (future bets)
+    "decay": 0.995,                     # per hand: old opponent statistics fade (window ~200 hands)
     "raise_margin": 0.03,               # x pot: prefer the passive line on ties
     "noise": 0.02,                      # x pot: random EV jitter (mixing)
     "bluff_lo": 0.3,                    # equity below which a bet counts as a bluff
@@ -653,7 +670,7 @@ def _decide(obs: Observation, memory: dict) -> Action:
         _new_hand_accounting(memory)
     if _FIXED_SCALE is None and _spent(memory) > 0.96 * memory["bank"]:
         best = _cheap_decide(obs)
-        cur["my_last"] = (street, best, obs.to_call, obs.is_button)
+        cur["my_last"] = (street, best, obs.to_call, obs.is_button, "s")
         cur["hist_n"] = len(obs.action_history)
         return best
     acts = _replay(obs, memory)
@@ -830,6 +847,7 @@ def on_hand_end(result: HandResult, memory: dict) -> None:
         memory["hands"] = memory.get("hands", 0) + 1
         cur = memory["cur"]
         st = memory["stats"]
+        _decay_stats(st, _P["decay"])
         # The opponent's last action of a hand never shows up in an
         # observation (the hand is over), so infer it from the result.
         if cur.get("hand_index") == result.hand_index and cur.get("my_last") is not None:
