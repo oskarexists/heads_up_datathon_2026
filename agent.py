@@ -647,7 +647,7 @@ _P = {
     "reraise_coef": 1.5,
     "size_f": (0.7, 0.4),               # preflop: fold probability scaling with raise size
     "narrow": 1.0,                      # 1 = weight opponent hands by their actions, 0 = random hand
-    "top_floor": 0.08, "tau": 0.06, "cap_depth": 0.5,
+    "top_floor": 0.04, "tau": 0.06, "cap_depth": 0.5,
     "sd_weight": (0.6, 0.4, 0.6, 0.8),  # trust in showdown calibration, per street
 }
 
