@@ -307,17 +307,25 @@ def _fill_wins(pool: dict, idx: np.ndarray) -> None:
 
 # ----- opponent statistics ---------------------------------------------------
 
-_PRIORS = {"pre_open": 0.5, "pre_re": 0.12, "pre_fold": 0.3, "bet": 0.45, "fold": 0.35, "raise": 0.12}
+_PRIORS = {"pre_open": 0.5, "pre_re": 0.12, "pre_fold": 0.3, "bet": 0.45, "raise": 0.12,
+           "fold_s": 0.3, "fold_b": 0.42}
+_SD_KINDS = ("open_raise", "reraise", "call_raise", "bet", "raise", "call")
 
 
 def _fresh_stats() -> dict:
     st = {k: [0.0, 0.0] for k in ("pre_open", "pre_re", "pre_fold")}
-    for k in ("bet", "fold", "raise"):
+    for k in ("bet", "raise", "fold_s", "fold_b"):      # fold_s / fold_b: facing a small / big bet
         st[k] = {1: [0.0, 0.0], 2: [0.0, 0.0], 3: [0.0, 0.0], "all": [0.0, 0.0]}
+    st["sd"] = {}       # (kind, street) -> [sum of strength percentiles, count], from showdowns
     return st
 
 
-def _count(st: dict, street: int, kind: str) -> None:
+def _size_class(bet: float, pot_before: float) -> str:
+    """'s' for bets up to about two thirds of the pot, 'b' for bigger ones."""
+    return "b" if bet > 0.65 * max(1.0, pot_before) else "s"
+
+
+def _count(st: dict, street: int, kind: str, size: str = "s") -> None:
     def pre(key, hit):
         st[key][0] += hit
         st[key][1] += 1
@@ -342,7 +350,7 @@ def _count(st: dict, street: int, kind: str) -> None:
             pre("pre_fold", 1)
             pre("pre_re", 0)
         else:
-            post("fold", 1)
+            post("fold_" + size, 1)
             post("raise", 0)
     elif kind == "bet":
         post("bet", 1)
@@ -350,10 +358,10 @@ def _count(st: dict, street: int, kind: str) -> None:
         post("bet", 0)
     elif kind == "raise":
         post("raise", 1)
-        post("fold", 0)
+        post("fold_" + size, 0)
     elif kind == "call":
         post("raise", 0)
-        post("fold", 0)
+        post("fold_" + size, 0)
 
 
 def _f_pre(st: dict, key: str) -> float:
@@ -368,9 +376,34 @@ def _f_post(st: dict, key: str, street: int) -> float:
     return (ks + 8.0 * pooled) / (ns + 8.0)
 
 
+def _x_for(st: dict, street: int, kind: str, size: str) -> float:
+    """Fraction of hands (strongest first) the opponent takes this action with.
+    Starts from how often they do it, corrected by what they showed down."""
+    if kind == "open_raise":
+        x = max(0.15, _f_pre(st, "pre_open"))
+    elif kind == "reraise":
+        x = max(0.08, _f_pre(st, "pre_re"))
+    elif kind == "call_raise":
+        x = max(0.2, 1.0 - _f_pre(st, "pre_fold"))
+    elif kind == "bet":
+        x = max(0.15, _f_post(st, "bet", street))
+    elif kind == "raise":
+        x = max(0.08, _f_post(st, "raise", street))
+    else:   # call
+        x = max(0.2, 1.0 - _f_post(st, "fold_" + size, street))
+    sd = st["sd"].get((kind, street))
+    if sd is not None and sd[1] > 0:
+        # a "top x" range has mean percentile 1 - x/2; hands seen at showdown
+        # are biased towards strength, so this only gets partial weight
+        x_obs = min(1.0, max(0.05, 2.0 * (1.0 - sd[0] / sd[1])))
+        wgt = _P["sd_weight"][street] * sd[1] / (sd[1] + 12.0)
+        x = (1.0 - wgt) * x + wgt * x_obs
+    return x
+
+
 def _replay(obs: Observation, memory: dict) -> list:
-    """Walk this hand's history. Returns [(street, kind)] for every opponent
-    action and records the ones not seen before in the statistics."""
+    """Walk this hand's history. Returns [(street, kind, bet size class)] for
+    every opponent action and records the ones not seen before in the statistics."""
     cur = memory["cur"]
     st = memory["stats"]
     bb, sb, stack0 = memory["bb"], memory["sb"], memory["stack0"]
@@ -391,6 +424,7 @@ def _replay(obs: Observation, memory: dict) -> list:
         can_raise = raises < memory["raise_cap"] and (stack0 - put[a]) > to_call and (stack0 - put[o]) > 0
         if a == 1:
             kind = None
+            size = _size_class(to_call, put[0] + put[1] - to_call) if to_call > 0 else "s"
             if rec.action == Action.FOLD:
                 kind = "fold"
             elif street == 0:
@@ -408,15 +442,49 @@ def _replay(obs: Observation, memory: dict) -> list:
                 elif can_raise:
                     kind = "check"
             if kind is not None:
-                acts.append((street, kind))
+                acts.append((street, kind, size))
                 if i >= cur["hist_n"]:
-                    _count(st, street, kind)
+                    _count(st, street, kind, size)
         tot[a] = rec.street_total
         put[a] += rec.amount
         if is_raise:
             raises += 1
     cur["hist_n"] = len(obs.action_history)
     return acts
+
+
+def _opp_pct_on_board(memory: dict, opp: np.ndarray, board: np.ndarray, hole) -> float:
+    """Strength percentile of a revealed opponent hand on a board, against
+    random holdings (the same yardstick the range model uses)."""
+    known = set(hole) | set(board.tolist())
+    deck = np.array([c for c in range(36) if c not in known], dtype=np.int64)
+    perms = _PERM_POOL.get(deck.size)
+    if perms is None:
+        return 0.5
+    cand = deck[perms[memory["rng"].integers(0, _POOL_ROWS, 160), :5]]
+    ref = _board_strength(_pair_idx(cand), _hand_idx(cand), board)
+    mine = _board_strength(_pair_idx(opp[None, :]), _hand_idx(opp[None, :]), board)[0]
+    return float((ref < mine).mean() + 0.5 * (ref == mine).mean())
+
+
+def _calibrate(memory: dict, result: HandResult, acts: list, hole) -> None:
+    """After a showdown: note how strong the opponent's hand was on each
+    street they bet, raised or called on."""
+    st = memory["stats"]
+    opp = np.array(result.opp_hole, dtype=np.int64)
+    board = np.array(result.board, dtype=np.int64)
+    pcts = {0: float(_PRE_PCT[_hand_idx(opp[None, :])[0]])}
+    for street, kind, _size in acts:
+        if kind not in _SD_KINDS:
+            continue
+        if street not in pcts:
+            k = {1: 3, 2: 4, 3: 5}[street]
+            if board.size < k:
+                continue
+            pcts[street] = _opp_pct_on_board(memory, opp, board[:k], hole)
+        sd = st["sd"].setdefault((kind, street), [0.0, 0.0])
+        sd[0] += pcts[street]
+        sd[1] += 1
 
 
 def _top(pct: np.ndarray, x: float) -> np.ndarray:
@@ -434,26 +502,16 @@ def _range_weights(pool: dict, acts: list, st: dict, now: int) -> np.ndarray:
     w = np.ones(pool["m"])
     if not _P["narrow"]:
         return w
-    for street, kind in acts:
+    for street, kind, size in acts:
         if kind == "check" and street != now:
             continue        # a check on an earlier street says little; skip the work
         p = pool["pct"][0] if street == 0 else _street_pct(pool, street)
-        if kind == "open_raise":
-            w = w * _top(p, max(0.15, _f_pre(st, "pre_open")))
-        elif kind == "open_pass":
+        if kind == "open_pass":
             w = w * _cap(p, _f_pre(st, "pre_open"))
-        elif kind == "reraise":
-            w = w * _top(p, max(0.08, _f_pre(st, "pre_re")))
-        elif kind == "call_raise":
-            w = w * _top(p, max(0.2, 1.0 - _f_pre(st, "pre_fold")))
-        elif kind == "bet":
-            w = w * _top(p, max(0.15, _f_post(st, "bet", street)))
         elif kind == "check":
             w = w * _cap(p, _f_post(st, "bet", street))
-        elif kind == "raise":
-            w = w * _top(p, max(0.08, _f_post(st, "raise", street)))
-        elif kind == "call":
-            w = w * _top(p, max(0.2, 1.0 - _f_post(st, "fold", street)))
+        elif kind in _SD_KINDS:
+            w = w * _top(p, _x_for(st, street, kind, size))
     return w
 
 
@@ -570,9 +628,10 @@ _P = {
     "bluff_f0": 0.3, "bluff_slope": 2.0, "bluff_max": 0.75,
     "junk": 0.37,                       # button open-folds below this preflop equity
     "reraise_coef": 1.5,
-    "size_f": (0.7, 0.4),               # fold probability scaling with bet size
+    "size_f": (0.7, 0.4),               # preflop: fold probability scaling with raise size
     "narrow": 1.0,                      # 1 = weight opponent hands by their actions, 0 = random hand
     "top_floor": 0.08, "tau": 0.06, "cap_depth": 0.5,
+    "sd_weight": (0.6, 0.4, 0.6, 0.8),  # trust in showdown calibration, per street
 }
 
 
@@ -624,10 +683,8 @@ def _decide(obs: Observation, memory: dict) -> Action:
     legal = obs.legal_actions
     pot, to_call = obs.pot, obs.to_call
     if street == 0:
-        f_fold = _f_pre(st, "pre_fold")
         g_raise = _f_pre(st, "pre_re")
     else:
-        f_fold = _f_post(st, "fold", street)
         g_raise = _f_post(st, "raise", street)
     p = _P
     e_adj = equity - p["call_margin"][street]
@@ -642,12 +699,18 @@ def _decide(obs: Observation, memory: dict) -> Action:
     else:
         c = min(to_call, obs.my_stack)
         evs[Action.CHECK_CALL] = e_adj * (pot + c) - c
+    fas, sizes = {}, {}
     for a in (Action.RAISE_HALF, Action.RAISE_POT):
         if a not in legal:
             continue
         r = obs.raise_to[a] - obs.my_bet                # chips we add
         size = (r - to_call) / max(1.0, pot + to_call)  # raise size relative to the pot
-        fa = min(0.95, f_fold * (p["size_f"][0] + p["size_f"][1] * min(1.0, size)))
+        sizes[a] = _size_class(r - to_call, pot + to_call)
+        if street == 0:
+            fa = _f_pre(st, "pre_fold") * (p["size_f"][0] + p["size_f"][1] * min(1.0, size))
+        else:
+            fa = _f_post(st, "fold_" + sizes[a], street)
+        fas[a] = fa = min(0.95, fa)
         ec = max(0.0, _equity_when_called(equity, fa, street) - realise)
         call_amt = min(r - to_call, obs.opp_stack)
         pot_after = pot + r + call_amt
@@ -661,7 +724,7 @@ def _decide(obs: Observation, memory: dict) -> Action:
     # --- strategic guards ---
     aggressive = best in (Action.RAISE_HALF, Action.RAISE_POT)
     if aggressive and equity < p["bluff_lo"]:
-        bluff_rate = min(p["bluff_max"], max(0.0, (f_fold - p["bluff_f0"]) * p["bluff_slope"]))
+        bluff_rate = min(p["bluff_max"], max(0.0, (fas[best] - p["bluff_f0"]) * p["bluff_slope"]))
         if rng.random() > bluff_rate:
             passive = {k: v for k, v in evs.items() if k in (Action.FOLD, Action.CHECK_CALL)}
             best = max(passive, key=passive.get)
@@ -673,8 +736,10 @@ def _decide(obs: Observation, memory: dict) -> Action:
     if _TRACE is not None:                              # debugging aid for local analysis only
         _TRACE.append((obs.hand_index, street, round(equity, 3), int(ess), pool["m"],
                        {a.name: round(v, 1) for a, v in evs.items()}, best.name, pot, to_call,
-                       [k for _, k in acts]))
-    cur["my_last"] = (street, best, to_call, obs.is_button)
+                       [k for _, k, _ in acts]))
+    cur["my_last"] = (street, best, to_call, obs.is_button, sizes.get(best, "s"))
+    cur["acts"] = acts
+    cur["hole"] = obs.hole_cards
     cur["hist_n"] = len(obs.action_history)
     return best
 
@@ -760,6 +825,7 @@ def on_hand_end(result: HandResult, memory: dict) -> None:
     went_to_showdown, board (cards revealed), opp_hole (opponent's cards,
     only after a showdown, else None), winner ('me', 'opp' or 'split').
     """
+    t0 = time.perf_counter()
     try:
         memory["hands"] = memory.get("hands", 0) + 1
         cur = memory["cur"]
@@ -767,20 +833,26 @@ def on_hand_end(result: HandResult, memory: dict) -> None:
         # The opponent's last action of a hand never shows up in an
         # observation (the hand is over), so infer it from the result.
         if cur.get("hand_index") == result.hand_index and cur.get("my_last") is not None:
-            street, action, to_call_then, was_button = cur["my_last"]
+            street, action, to_call_then, was_button, size = cur["my_last"]
+            acts = list(cur.get("acts", []))
             my_aggr = action in (Action.RAISE_HALF, Action.RAISE_POT)
             if not result.went_to_showdown:
                 if result.winner == "me" and my_aggr:
-                    _count(st, street, "fold")          # opponent folded to my bet
+                    _count(st, street, "fold", size)    # opponent folded to my bet
             elif my_aggr:
-                _count(st, street, "call")              # opponent called my last bet
+                _count(st, street, "call", size)        # opponent called my last bet
+                acts.append((street, "call", size))
             elif action == Action.CHECK_CALL and to_call_then == 0 and street == 3 and not was_button:
                 _count(st, street, "check")             # opponent checked back the river
+            if result.went_to_showdown and result.opp_hole is not None and _P["sd_weight"][3] > 0:
+                _calibrate(memory, result, acts, cur.get("hole", ()))
         elif cur.get("hand_index") != result.hand_index:
             if result.winner == "me" and not result.went_to_showdown:
                 _count(st, 0, "open_pass")              # opponent open-folded the button
     except Exception:
         pass
+    finally:
+        memory["time_used"] = memory.get("time_used", 0.0) + (time.perf_counter() - t0)
 
 # ===== END OF YOUR CODE =====
 
