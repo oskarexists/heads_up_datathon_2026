@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import csv
 import http.client
+import importlib.util
 import json
 import math
 import os
@@ -64,17 +65,19 @@ def _seed_int(text: str) -> int:
     return zlib.adler32(text.encode()) & 0x7FFFFFFF
 
 
-def play_half(opponent: str, match_seed: str, half: int, num_deals: int, decide_exc: list) -> dict:
+def play_half(opponent: str, match_seed: str, half: int, num_deals: int, decide_exc: list,
+              hero_mod=None, hero_tag: str = "hero") -> dict:
     """Play one half. Hero memory is new. Returns hero chip nets and internal timing."""
+    hero_mod = agent if hero_mod is None else hero_mod
     hero_seat = agent1_seat_for_half(half)
     hero_mem: dict = {}
-    agent.new_half(AgentConfig(num_hands=num_deals), hero_mem)
-    hero_mem["rng"] = np.random.default_rng(_seed_int(f"{match_seed}:{half}:{opponent}:hero"))
+    hero_mod.new_half(AgentConfig(num_hands=num_deals), hero_mem)
+    hero_mem["rng"] = np.random.default_rng(_seed_int(f"{match_seed}:{half}:{opponent}:{hero_tag}"))
     villain = ADVERSARIES[opponent]()
     vill_mem: dict = {}
     villain.new_half(AgentConfig(num_hands=num_deals), vill_mem)
 
-    real_decide = agent._decide
+    real_decide = hero_mod._decide
 
     def wrapped(obs, memory):
         try:
@@ -83,7 +86,7 @@ def play_half(opponent: str, match_seed: str, half: int, num_deals: int, decide_
             decide_exc[0] += 1
             raise
 
-    agent._decide = wrapped
+    hero_mod._decide = wrapped
     nets: list[int] = []
     illegal = 0
     try:
@@ -93,7 +96,7 @@ def play_half(opponent: str, match_seed: str, half: int, num_deals: int, decide_
                 seat = game.to_act
                 obs = game.observation(seat)
                 if seat == hero_seat:
-                    action = agent.choose_action(obs, hero_mem)
+                    action = hero_mod.choose_action(obs, hero_mem)
                     if action not in obs.legal_actions:
                         illegal += 1
                         action = Action.CHECK_CALL if obs.to_call == 0 else Action.FOLD
@@ -104,10 +107,10 @@ def play_half(opponent: str, match_seed: str, half: int, num_deals: int, decide_
                 game.apply(action)
             result = game.result()
             nets.append(result.nets[hero_seat])
-            agent.on_hand_end(game.hand_result(hero_seat), hero_mem)
+            hero_mod.on_hand_end(game.hand_result(hero_seat), hero_mem)
             villain.on_hand_end(game.hand_result(1 - hero_seat), vill_mem)
     finally:
-        agent._decide = real_decide
+        hero_mod._decide = real_decide
 
     return {
         "nets": nets,
@@ -149,7 +152,8 @@ def summarize_pair(half1: list[int], half2: list[int]) -> dict:
     }
 
 
-def run_matches(opponents: list[str], match_seed: str, num_deals: int) -> dict:
+def run_matches(opponents: list[str], match_seed: str, num_deals: int,
+                hero_mod=None, hero_label: str = "patched") -> dict:
     rows = []
     summaries = []
     decide_exc = [0]
@@ -158,8 +162,8 @@ def run_matches(opponents: list[str], match_seed: str, num_deals: int) -> dict:
         print(f"match {name} deals={num_deals} seed={match_seed}", flush=True)
         t1 = time.perf_counter()
         before = decide_exc[0]
-        h1 = play_half(name, match_seed, 1, num_deals, decide_exc)
-        h2 = play_half(name, match_seed, 2, num_deals, decide_exc)
+        h1 = play_half(name, match_seed, 1, num_deals, decide_exc, hero_mod, hero_label)
+        h2 = play_half(name, match_seed, 2, num_deals, decide_exc, hero_mod, hero_label)
         stats = summarize_pair(h1["nets"], h2["nets"])
         elapsed = time.perf_counter() - t1
         print(
@@ -204,7 +208,7 @@ def run_matches(opponents: list[str], match_seed: str, num_deals: int) -> dict:
         })
     return {
         "kind": "in_process_duplicate",
-        "hero": "agent.py Holey Donut",
+        "hero": hero_label,
         "base_note": "memory dict replaced each half; process globals are the lookup tables",
         "match_seed": match_seed,
         "num_deals": num_deals,
@@ -220,6 +224,118 @@ def run_matches(opponents: list[str], match_seed: str, num_deals: int) -> dict:
         "opponents": summaries,
         "rows": rows,
     }
+
+
+def load_agent_module(path: str, name: str):
+    """Load an agent.py snapshot without replacing the already-imported patched module."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def bench_rerank() -> dict:
+    """Time one combined-pool street ranking versus ranking only the new half."""
+    rng = np.random.default_rng(0)
+    hole = [0, 1, 2, 3, 4]
+    board = np.array([8, 9, 10])
+    pool = agent._make_pool(rng, hole, board, 800)
+    old = pool["hidx"][:400]
+    old_p = pool["pidx"][:400]
+    repeats = 30
+    t0 = time.perf_counter()
+    for _ in range(repeats):
+        agent._board_strength(old_p, old, board)
+    half_s = (time.perf_counter() - t0) / repeats
+    t1 = time.perf_counter()
+    for _ in range(repeats):
+        agent._board_strength(pool["pidx"], pool["hidx"], board)
+    full_s = (time.perf_counter() - t1) / repeats
+    return {
+        "rows_half": 400,
+        "rows_full": 800,
+        "repeats": repeats,
+        "half_batch_seconds": half_s,
+        "full_pool_seconds": full_s,
+        "extra_seconds_to_rerank_old_rows": full_s - half_s,
+        "note": "Extra cost of recomputing street strength on the combined pool instead of only the new batch.",
+    }
+
+
+def play_versus_module(baseline, match_seed: str, num_deals: int, hero_label: str, baseline_label: str) -> dict:
+    """Duplicate match, current hero versus a loaded agent module. Hero-positive."""
+    decide_exc = [0]
+    t0 = time.perf_counter()
+    halves = []
+    for half in (1, 2):
+        hero_seat = agent1_seat_for_half(half)
+        hero_mem: dict = {}
+        vill_mem: dict = {}
+        agent.new_half(AgentConfig(num_hands=num_deals), hero_mem)
+        baseline.new_half(AgentConfig(num_hands=num_deals), vill_mem)
+        hero_mem["rng"] = np.random.default_rng(_seed_int(f"{match_seed}:{half}:{hero_label}"))
+        vill_mem["rng"] = np.random.default_rng(_seed_int(f"{match_seed}:{half}:{baseline_label}"))
+        nets = []
+        illegal = 0
+        for deal_index in range(num_deals):
+            game = Game(make_deal(match_seed, deal_index), button_for_deal(deal_index), deal_index)
+            while not game.is_terminal:
+                seat = game.to_act
+                obs = game.observation(seat)
+                actor = agent if seat == hero_seat else baseline
+                memory = hero_mem if seat == hero_seat else vill_mem
+                try:
+                    action = actor.choose_action(obs, memory)
+                except Exception:
+                    decide_exc[0] += 1
+                    raise
+                if action not in obs.legal_actions:
+                    illegal += 1
+                    action = Action.CHECK_CALL if obs.to_call == 0 else Action.FOLD
+                game.apply(action)
+            nets.append(game.result().nets[hero_seat])
+            agent.on_hand_end(game.hand_result(hero_seat), hero_mem)
+            baseline.on_hand_end(game.hand_result(1 - hero_seat), vill_mem)
+        halves.append({"nets": nets, "illegal": illegal,
+                       "time": hero_mem.get("time_used", 0.0),
+                       "calls": hero_mem.get("calls", 0)})
+    stats = summarize_pair(halves[0]["nets"], halves[1]["nets"])
+    elapsed = time.perf_counter() - t0
+    rows = [{
+        "opponent": baseline_label,
+        "hero": hero_label,
+        "deal_index": i,
+        "half1_chips": stats["half1_chips_by_deal"][i],
+        "half2_chips": stats["half2_chips_by_deal"][i],
+        "paired_bb": round(bb, 6),
+    } for i, bb in enumerate(stats["paired_bb"])]
+    summary = {
+        "opponent": baseline_label,
+        "hero": hero_label,
+        "n_deals": num_deals,
+        "match_seed": match_seed,
+        "mean_bb_per_deal": stats["mean_bb_per_deal"],
+        "std_bb": stats["std_bb"],
+        "se_bb": stats["se_bb"],
+        "ci95": stats["ci95"],
+        "z": CHOP_Z,
+        "verdict_if_this_were_the_match": stats["verdict_if_this_were_the_match"],
+        "reason": stats["reason"],
+        "half1_hero_chips": stats["half1_chips"],
+        "half2_hero_chips": stats["half2_chips"],
+        "illegal_actions": halves[0]["illegal"] + halves[1]["illegal"],
+        "decide_exceptions": decide_exc[0],
+        "wall_seconds": elapsed,
+        "hero_internal_time_half1_s": halves[0]["time"],
+        "hero_internal_time_half2_s": halves[1]["time"],
+        "interval_includes_zero": stats["ci95"][0] <= 0.0 <= stats["ci95"][1],
+    }
+    print(
+        f"  {hero_label} vs {baseline_label}: {summary['mean_bb_per_deal']:+.3f} "
+        f"CI [{summary['ci95'][0]:+.3f}, {summary['ci95'][1]:+.3f}] in {elapsed:.1f}s",
+        flush=True,
+    )
+    return {"summary": summary, "rows": rows}
 
 
 def _wait_ready(port: int, proc: subprocess.Popen, timeout: float) -> float:
@@ -416,6 +532,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--http-opponent", default="calling_station")
     parser.add_argument("--http-port", type=int, default=5918)
     parser.add_argument("--skip-inprocess", action="store_true")
+    parser.add_argument("--baseline", default="", help="path to an unpatched agent.py; hero is the working tree")
+    parser.add_argument("--hero-label", default="patched")
+    parser.add_argument("--baseline-label", default="original")
     args = parser.parse_args(argv)
     opponents = [p.strip() for p in args.opponents.split(",") if p.strip()]
     unknown = [p for p in opponents if p not in ADVERSARIES]
@@ -425,6 +544,42 @@ def main(argv: list[str] | None = None) -> int:
     if args.http_opponent not in ADVERSARIES:
         print(f"unknown http opponent {args.http_opponent}", file=sys.stderr)
         return 2
+
+    if args.baseline:
+        baseline = load_agent_module(args.baseline, "agent_original_review")
+        bench = bench_rerank()
+        print(f"rerank extra {bench['extra_seconds_to_rerank_old_rows']*1e3:.3f} ms per 400->800 pool", flush=True)
+        print(f"match {args.hero_label} vs {args.baseline_label}", flush=True)
+        versus = play_versus_module(baseline, args.seed, args.deals, args.hero_label, args.baseline_label)
+        patched_field = run_matches(opponents, args.seed, args.deals, hero_label=args.hero_label)
+        original_field = run_matches(opponents, args.seed, args.deals, hero_mod=baseline, hero_label=args.baseline_label)
+        out_dir = Path(args.out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "kind": "patch_comparison",
+            "ci_formula": CI_FORMULA,
+            "match_seed": args.seed,
+            "num_deals": args.deals,
+            "rerank_benchmark": bench,
+            "patched_vs_original": versus["summary"],
+            "patched_vs_opponents": patched_field["opponents"],
+            "original_vs_opponents": original_field["opponents"],
+            "check_build": "unfinished/terminated, not a pass. Prior base-image build was terminated after stalling; this chunk did not restart Docker.",
+        }
+        (out_dir / "patch_comparison.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        def _write_rows(path, rows, fields):
+            with path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+                writer.writeheader()
+                writer.writerows(rows)
+        fields = ["opponent", "hero", "deal_index", "half1_chips", "half2_chips", "paired_bb"]
+        _write_rows(out_dir / "patched_vs_original.csv", versus["rows"], fields)
+        patched_rows = [{"hero": args.hero_label, **row} for row in patched_field["rows"]]
+        original_rows = [{"hero": args.baseline_label, **row} for row in original_field["rows"]]
+        _write_rows(out_dir / "patched_vs_probes.csv", patched_rows, fields)
+        _write_rows(out_dir / "original_vs_probes.csv", original_rows, fields)
+        print(f"wrote {out_dir}", flush=True)
+        return 0
 
     if args.skip_inprocess:
         payload = {"kind": "in_process_duplicate", "opponents": [], "rows": [], "ci_formula": CI_FORMULA}

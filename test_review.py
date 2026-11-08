@@ -100,26 +100,6 @@ def test_replay_pot_and_to_call_match_the_engine():
             game.apply(action)
 
 
-def _bot_flush_draw(hole: np.ndarray, board: np.ndarray) -> bool:
-    hidx = agent._hand_idx(hole[None, :])
-    suit_counts = np.bincount(board & 3, minlength=4)
-    flagged = ((np.minimum(agent._SCNT[hidx], 2) + np.minimum(suit_counts, 3)[None, :]) == 4).any(1)
-    return bool(flagged[0])
-
-
-def _bot_straight_draw(hole: np.ndarray, board: np.ndarray) -> bool:
-    hidx = agent._hand_idx(hole[None, :])
-    made = agent._best(agent._pair_idx(hole), agent._triple_idx(board[None, :]))
-    board_mask = 0
-    for card in board.tolist():
-        board_mask |= 1 << (int(card) >> 2)
-    hole_hits = agent._POP[agent._RMASK[hidx][:, None] & agent._WINDOWS[None, :]]
-    board_hits = agent._POP[board_mask & agent._WINDOWS]
-    flagged = ((np.minimum(hole_hits, 2) + np.minimum(board_hits, 3)[None, :]) >= 4).any(1)
-    flagged = flagged & (made < agent._STRAIGHT_RANK)
-    return bool(flagged[0])
-
-
 def _real_straight_draw(hole: np.ndarray, board: np.ndarray) -> bool:
     hole_ranks = [int(c) >> 2 for c in hole.tolist()]
     board_ranks = [int(c) >> 2 for c in board.tolist()]
@@ -134,49 +114,73 @@ def _real_straight_draw(hole: np.ndarray, board: np.ndarray) -> bool:
     return False
 
 
-def test_draw_bonus_flags_hands_that_cannot_draw_with_two_hole_cards():
-    """Documents agent._board_strength draw bonuses that break the 2-hole rule.
+def _draw_bonus(hole: np.ndarray, board: np.ndarray) -> float:
+    """Flop/turn draw bonus in category units (strength minus made-hand value)."""
+    row = hole[None, :]
+    made = float(agent._VAL[agent._best(agent._pair_idx(hole), agent._triple_idx(board[None, :]))[0]])
+    strength = float(agent._board_strength(agent._pair_idx(row), agent._hand_idx(row), board)[0])
+    return strength - made
 
-    A correct Omaha flush draw on this flop needs two hole cards of the board
-    suit. A correct straight draw needs two hole ranks inside some window.
-    The current bonuses flag both counterexamples. Update this test if that
-    ranker is fixed.
+
+def test_draw_bonus_uses_two_hole_cards_and_no_double_count():
+    """Flush and straight bonuses follow exactly-two-hole Omaha draws.
+
+    Made flushes and backdoors get no flush-draw bonus. A rank on both the
+    holding and the board counts once. On the flop the scale is 1, so a pure
+    flush draw adds 1.3 and a pure straight draw adds 0.8.
     """
-    hole_flush = np.array([
-        _card(8, 2),  # Ah
-        _card(7, 0),  # Kc
-        _card(6, 1),  # Qd
-        _card(5, 3),  # Js
-        _card(4, 0),  # Tc
-    ])
-    board_flush = np.array([_card(3, 2), _card(2, 2), _card(1, 2)])  # 9h 8h 7h
-    assert agent._SCNT[agent._hand_idx(hole_flush[None, :])][0, 2] == 1
-    assert _bot_flush_draw(hole_flush, board_flush) is True
+    # Ah Ac Ad Kd Qd on 9h 8h 7h: one heart in the hole, so no flush draw.
+    one_heart = np.array([_card(8, 2), _card(8, 0), _card(8, 1), _card(7, 1), _card(6, 1)])
+    monotone = np.array([_card(3, 2), _card(2, 2), _card(1, 2)])
+    assert _real_straight_draw(one_heart, monotone) is False
+    assert abs(_draw_bonus(one_heart, monotone)) < 1e-9
 
-    hole_straight = np.array([
-        _card(8, 0), _card(8, 1),  # aces
-        _card(7, 2), _card(7, 3),  # kings
-        _card(6, 0),               # queen
-    ])
-    board_straight = np.array([_card(1, 0), _card(2, 1), _card(3, 2)])  # 7c 8d 9h
-    assert _real_straight_draw(hole_straight, board_straight) is False
-    assert _bot_straight_draw(hole_straight, board_straight) is True
+    # Qh Jh Qc Jd Qd. Two hearts, ranks Q/J only.
+    flush_hole = np.array([_card(6, 2), _card(5, 2), _card(6, 0), _card(5, 1), _card(6, 1)])
+    # Kh Kd 6h: exactly two hearts. T-A union is Q,J,K (3), so no straight draw.
+    two_hearts = np.array([_card(7, 2), _card(7, 1), _card(0, 2)])
+    assert _real_straight_draw(flush_hole, two_hearts) is False
+    assert abs(_draw_bonus(flush_hole, two_hearts) - 1.3) < 1e-9
+
+    # Kh 6h 9h is a made flush. The straight-draw gate is off once a straight is made.
+    made_flush_board = np.array([_card(7, 2), _card(0, 2), _card(3, 2)])
+    assert abs(_draw_bonus(flush_hole, made_flush_board)) < 1e-9
+
+    # Kh 6c 7d: one heart (backdoor) and no four-rank window.
+    backdoor_board = np.array([_card(7, 2), _card(0, 0), _card(1, 1)])
+    assert _real_straight_draw(flush_hole, backdoor_board) is False
+    assert abs(_draw_bonus(flush_hole, backdoor_board)) < 1e-9
+
+    # 9c 8d Ac Ad Kc on 9h 8c Kd. Shared 9 and 8 used to count twice
+    # (hole 2 + board 2). The union in 8-Q is {8,9}, which is not a draw.
+    overlap = np.array([_card(3, 0), _card(2, 1), _card(8, 0), _card(8, 1), _card(7, 0)])
+    overlap_board = np.array([_card(3, 2), _card(2, 0), _card(7, 1)])
+    assert _real_straight_draw(overlap, overlap_board) is False
+    assert abs(_draw_bonus(overlap, overlap_board)) < 1e-9
+
+    # Tc Jc Ad Kd 6s on 9h 8d 8c. 8-Q holds {8,9,T,J}: two hole ranks, four
+    # distinct, and the paired board is not yet a straight.
+    straight_hole = np.array([_card(4, 0), _card(5, 0), _card(8, 1), _card(7, 1), _card(0, 3)])
+    straight_board = np.array([_card(3, 2), _card(2, 1), _card(2, 0)])
+    assert _real_straight_draw(straight_hole, straight_board) is True
+    assert abs(_draw_bonus(straight_hole, straight_board) - 0.8) < 1e-9
 
 
-def test_extended_pool_percentiles_stay_inside_each_batch():
-    """Street percentiles are ranked inside each _extend_pool batch, then concatenated."""
+def test_extended_pool_percentiles_are_ranks_in_the_full_sample():
+    """Street percentiles are recomputed on the combined pool. Preflop stays global."""
     rng = np.random.default_rng(0)
     hole = [0, 1, 2, 3, 4]
     board = [8, 9, 10]
     pool = agent._make_pool(rng, hole, board, 30)
-    agent._street_pct(pool, 1)
-    first = pool["pct"][1].copy()
+    pre = pool["pct"][0].copy()
     agent._extend_pool(rng, pool, hole, 30)
-    assert pool["pct"][1].shape == (60,)
-    assert np.allclose(pool["pct"][1][:30], first)
+    assert pool["m"] == 60
+    assert 1 not in pool["pct"]
+    assert np.allclose(pool["pct"][0][:30], pre)
+    assert np.allclose(pool["pct"][0], agent._PRE_PCT[pool["hidx"]])
+    ranked = agent._street_pct(pool, 1)
     strength = agent._board_strength(pool["pidx"], pool["hidx"], pool["board"][:3])
-    combined = agent._percentile(strength)
-    assert float(np.max(np.abs(pool["pct"][1] - combined))) > 0.05
+    assert np.allclose(ranked, agent._percentile(strength))
 
 
 def test_decide_exception_does_not_escape_choose_action():

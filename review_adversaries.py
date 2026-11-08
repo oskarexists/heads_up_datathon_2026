@@ -143,9 +143,92 @@ class Exploiter:
         memory["pending"] = False
 
 
+def _flop_texture(board: tuple[int, ...]) -> str:
+    """'monotone', 'connected', or '' from the first three board cards."""
+    if len(board) < 3:
+        return ""
+    flop = board[:3]
+    suits = [card & 3 for card in flop]
+    ranks = sorted({card >> 2 for card in flop})
+    if len(set(suits)) == 1:
+        return "monotone"
+    if len(ranks) >= 2 and ranks[-1] - ranks[0] <= 4:
+        return "connected"
+    return ""
+
+
+class MonotoneBoardProbe:
+    """Pot-raise when the flop is monotone or spans at most four ranks. Otherwise call.
+
+    This is a targeted probe of draw-bonus ranking, not a proven exploit.
+    """
+
+    name = "mono_board"
+
+    def new_half(self, config: AgentConfig, memory: dict) -> None:
+        return None
+
+    def choose_action(self, obs: Observation, memory: dict) -> Action:
+        if _flop_texture(obs.board):
+            return _must(obs, Action.RAISE_POT)
+        return _must(obs, Action.CHECK_CALL)
+
+    def on_hand_end(self, result: HandResult, memory: dict) -> None:
+        return None
+
+
+class ExtensionPress:
+    """Call preflop, then pot-raise every postflop decision.
+
+    Postflop raises are the spot where the hero extends a narrow pool.
+    """
+
+    name = "extension_press"
+
+    def new_half(self, config: AgentConfig, memory: dict) -> None:
+        return None
+
+    def choose_action(self, obs: Observation, memory: dict) -> Action:
+        if int(obs.street) == 0:
+            return _must(obs, Action.CHECK_CALL)
+        return _must(obs, Action.RAISE_POT)
+
+    def on_hand_end(self, result: HandResult, memory: dict) -> None:
+        return None
+
+
+class FoldBait:
+    """Fold to bets for 40 hands, then never fold and pot-raise when checked to.
+
+    Trains a high fold frequency, then takes the opposite line. A probe of the
+    fold-to-top-percentile model, not a proven exploit.
+    """
+
+    name = "fold_bait"
+    TRAIN_HANDS = 40
+
+    def new_half(self, config: AgentConfig, memory: dict) -> None:
+        memory["hands"] = 0
+
+    def choose_action(self, obs: Observation, memory: dict) -> Action:
+        if int(memory.get("hands", 0)) < self.TRAIN_HANDS:
+            if obs.to_call > 0:
+                return _must(obs, Action.FOLD)
+            return _must(obs, Action.CHECK_CALL)
+        if obs.to_call == 0:
+            return _must(obs, Action.RAISE_POT)
+        return _must(obs, Action.CHECK_CALL)
+
+    def on_hand_end(self, result: HandResult, memory: dict) -> None:
+        memory["hands"] = int(memory.get("hands", 0)) + 1
+
+
 ADVERSARIES = {
     Maniac.name: Maniac,
     CallingStation.name: CallingStation,
     MinRaiseProber.name: MinRaiseProber,
     Exploiter.name: Exploiter,
+    MonotoneBoardProbe.name: MonotoneBoardProbe,
+    ExtensionPress.name: ExtensionPress,
+    FoldBait.name: FoldBait,
 }

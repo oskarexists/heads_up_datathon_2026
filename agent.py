@@ -213,14 +213,24 @@ def _board_strength(pidx: np.ndarray, hidx: np.ndarray, board: np.ndarray) -> np
     if k == 5:
         return val
     bs = np.bincount(board & 3, minlength=4)                            # suit counts on board
-    flush_draw = ((np.minimum(_SCNT[hidx], 2) + np.minimum(bs, 3)[None, :]) == 4).any(1)
+    # Omaha flush uses exactly two hole cards. A draw (one card to come) is two
+    # hole cards of a suit and exactly two of that suit on the board. Two hole
+    # cards plus three board cards is a made flush (already in `val`). Two hole
+    # cards plus one board card is only a backdoor and gets no draw bonus.
+    # One hole card plus three board cards is not a flush draw at all.
+    sc = _SCNT[hidx]
+    flush_draw = ((sc >= 2) & (bs[None, :] == 2)).any(1)
     bmask = 0
     for x in board.tolist():
         bmask |= 1 << (x >> 2)
-    hw = _POP[_RMASK[hidx][:, None] & _WINDOWS[None, :]]
-    bw = _POP[bmask & _WINDOWS]
-    straight_draw = (((np.minimum(hw, 2) + np.minimum(bw, 3)[None, :]) >= 4).any(1)
-                     & (made < _STRAIGHT_RANK))
+    hole_mask = _RMASK[hidx][:, None]
+    windows = _WINDOWS[None, :]
+    hw = _POP[hole_mask & windows]
+    # Union count: a rank on both the holding and the board is one rank, not two.
+    union = _POP[(hole_mask | np.int64(bmask)) & windows]
+    # Two distinct hole ranks, and four or five distinct ranks in the window
+    # between those hole ranks and the board. Union of three is a backdoor.
+    straight_draw = ((hw >= 2) & (union >= 4)).any(1) & (made < _STRAIGHT_RANK)
     scale = 1.0 if k == 3 else 0.6
     return val + scale * (1.3 * flush_draw + 0.8 * straight_draw)
 
@@ -273,13 +283,19 @@ def _make_pool(rng, hole, board, m: int) -> dict:
 
 
 def _extend_pool(rng, pool: dict, hole, m: int) -> None:
-    """Add m more candidates to a pool (same hole cards and board)."""
+    """Add m more candidates to a pool (same hole cards and board).
+
+    Preflop percentiles come from the global ``_PRE_PCT`` table, so they stay
+    comparable when concatenated. Street percentiles are ranks inside one
+    sample. They are dropped and recomputed on the combined pool the next
+    time ``_street_pct`` is asked, instead of being concatenated batch-wise.
+    """
     more = _make_pool(rng, hole, pool["board"], m)
-    for key in list(pool["pct"]):
-        pool["pct"][key] = np.concatenate([pool["pct"][key], _street_pct(more, key)])
+    pre = np.concatenate([pool["pct"][0], more["pct"][0]])
     for key in ("draws", "pidx", "hidx", "win"):
         pool[key] = np.concatenate([pool[key], more[key]])
     pool["m"] += m
+    pool["pct"] = {0: pre}
 
 
 def _street_pct(pool: dict, street: int) -> np.ndarray:
