@@ -1,0 +1,29 @@
+{
+  "source_dir": "/home/alexn/Documents/code/datathon_2026/poker-bot-tournament/oskar-review",
+  "snapshot_dir": "/home/alexn/Documents/code/datathon_2026/poker-bot-tournament/table-policy-snapshot-2105",
+  "hashes": {
+    "agent.py": "b8be3a98d0278fc022a9b8e437dd4435f0e49e14957eaba76c25254ac4c709e3",
+    "game.py": "bc00e3c2d1bf64cbd36bf5553dae218767f11b20f388e5c417d989919877f2db",
+    "evaluator.py": "e2a151a4c41828a035030f490c91b81015d04bc209abfb860ca3d0dce649e0b4",
+    "judge_engine.py": "fa7a7e3fb49c09588cfcf0930a8e3f6c189e419dbc54263ae7d53b953223d422",
+    "review_harness.py": "dbb2646854ac8e814ebd67d0b3d655ea9bb467856596d5fcf9b7265e899336c2",
+    "review_adversaries.py": "4223fb52cbd7d7d71d9c97f47ed987e48597b846172b1bc2919d6f5e42e0a0e7",
+    "lookup_tables/equity_manifest.json": "bc00a23a03813a908915b1f1a211eef7a3031efb4c22b511659371930eeccef3",
+    "lookup_tables/equity_mean.npy": "ec7586a75e15d9a51be3c89bf37fc8a299590873ded40158c5902e1212783db4",
+    "lookup_tables/equity_n.npy": "1fdb8706c389f27aabf5f461a04b2b5453de66b6187254b26e992fef83d62d1b",
+    "lookup_tables/equity_pct.npy": "60e7716d99c280a5a9c0fe3430ed4448e162bc88b5588dd1f4de0d863287d59f",
+    "lookup_tables/equity_ties.npy": "774a72cf631c1ff825481a19e3c11d69041a732b659725aa4dbc54d4543ea5d0",
+    "lookup_tables/equity_wins.npy": "f8174d4f91582fd361013da40f6f88db0dd835dd9109f1a7dcdbe1564209c2b7",
+    "lookup_tables/manifest.json": "1b7cf9230e6cde6eb869d0a7ba94d82b227a088aba7e5730af0b2a85f34098bb",
+    "lookup_tables/pre_pct.npy": "b1e09dbde2d2e1c0e5d22dc99d7bf65758e52d8af75317e5c5ed5b4ba23e8448",
+    "lookup_tables/rmask.npy": "ad8366865f5c9c2e3043785ead62760b48b21c73c5c6f533b31ee440130140d6",
+    "lookup_tables/scnt.npy": "3b41d597190f6b906cc5883868469268e42b68a659c673e2dbf7a56c21e85b04",
+    "lookup_tables/straight_rank.npy": "e4f8e89b2c37902fdd9037d261bd85b652a91184f1994a72e66654065c7517e6",
+    "lookup_tables/tbl.npy": "259fb6ad3b7e91e1a512eba7e962673d90918df143549b40b8a6402dc1b4b7aa",
+    "lookup_tables/val.npy": "a85c66f93a08e9dfeee271640de85f9ff468298e11803698f230f93233b6489a"
+  },
+  "env": {
+    "AGENT_PREFLOP": "equity",
+    "AGENT_RAISE_ERRORS": "1"
+  }
+}

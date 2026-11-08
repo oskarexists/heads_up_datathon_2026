@@ -1,0 +1,525 @@
+{
+  "candidate_snapshot": {
+    "source_dir": "/home/alexn/Documents/code/datathon_2026/poker-bot-tournament/oskar-review",
+    "snapshot_dir": "/home/alexn/Documents/code/datathon_2026/poker-bot-tournament/table-policy-snapshot-2105",
+    "hashes": {
+      "agent.py": "b8be3a98d0278fc022a9b8e437dd4435f0e49e14957eaba76c25254ac4c709e3",
+      "game.py": "bc00e3c2d1bf64cbd36bf5553dae218767f11b20f388e5c417d989919877f2db",
+      "evaluator.py": "e2a151a4c41828a035030f490c91b81015d04bc209abfb860ca3d0dce649e0b4",
+      "judge_engine.py": "fa7a7e3fb49c09588cfcf0930a8e3f6c189e419dbc54263ae7d53b953223d422",
+      "review_harness.py": "dbb2646854ac8e814ebd67d0b3d655ea9bb467856596d5fcf9b7265e899336c2",
+      "review_adversaries.py": "4223fb52cbd7d7d71d9c97f47ed987e48597b846172b1bc2919d6f5e42e0a0e7",
+      "lookup_tables/equity_manifest.json": "bc00a23a03813a908915b1f1a211eef7a3031efb4c22b511659371930eeccef3",
+      "lookup_tables/equity_mean.npy": "ec7586a75e15d9a51be3c89bf37fc8a299590873ded40158c5902e1212783db4",
+      "lookup_tables/equity_n.npy": "1fdb8706c389f27aabf5f461a04b2b5453de66b6187254b26e992fef83d62d1b",
+      "lookup_tables/equity_pct.npy": "60e7716d99c280a5a9c0fe3430ed4448e162bc88b5588dd1f4de0d863287d59f",
+      "lookup_tables/equity_ties.npy": "774a72cf631c1ff825481a19e3c11d69041a732b659725aa4dbc54d4543ea5d0",
+      "lookup_tables/equity_wins.npy": "f8174d4f91582fd361013da40f6f88db0dd835dd9109f1a7dcdbe1564209c2b7",
+      "lookup_tables/manifest.json": "1b7cf9230e6cde6eb869d0a7ba94d82b227a088aba7e5730af0b2a85f34098bb",
+      "lookup_tables/pre_pct.npy": "b1e09dbde2d2e1c0e5d22dc99d7bf65758e52d8af75317e5c5ed5b4ba23e8448",
+      "lookup_tables/rmask.npy": "ad8366865f5c9c2e3043785ead62760b48b21c73c5c6f533b31ee440130140d6",
+      "lookup_tables/scnt.npy": "3b41d597190f6b906cc5883868469268e42b68a659c673e2dbf7a56c21e85b04",
+      "lookup_tables/straight_rank.npy": "e4f8e89b2c37902fdd9037d261bd85b652a91184f1994a72e66654065c7517e6",
+      "lookup_tables/tbl.npy": "259fb6ad3b7e91e1a512eba7e962673d90918df143549b40b8a6402dc1b4b7aa",
+      "lookup_tables/val.npy": "a85c66f93a08e9dfeee271640de85f9ff468298e11803698f230f93233b6489a"
+    },
+    "env": {
+      "AGENT_PREFLOP": "equity",
+      "AGENT_RAISE_ERRORS": "1"
+    }
+  },
+  "primary_paired_deals": 90000,
+  "observed_decide_exceptions": 0,
+  "illegal_actions": 0,
+  "primary_matchups": [
+    {
+      "hero": "table_candidate",
+      "opponent": "calling_station",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 12.33,
+      "pooled_se": 0.16862678760905672,
+      "pooled_ci95": [
+        11.999491496286248,
+        12.660508503713752
+      ],
+      "seed_cluster_se": 0.18896904508410892,
+      "seed_cluster_t9_ci95": [
+        11.902522321126657,
+        12.757477678873343
+      ],
+      "seed_means": [
+        12.443,
+        13.02,
+        11.2535,
+        11.437,
+        12.5765,
+        12.7565,
+        12.8215,
+        12.713,
+        12.32,
+        11.959
+      ]
+    },
+    {
+      "hero": "table_candidate",
+      "opponent": "exploiter",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 5.42085,
+      "pooled_se": 0.25031851102834235,
+      "pooled_ci95": [
+        4.930225718384449,
+        5.9114742816155506
+      ],
+      "seed_cluster_se": 0.2945079233984112,
+      "seed_cluster_t9_ci95": [
+        4.754626791600309,
+        6.087073208399691
+      ],
+      "seed_means": [
+        5.456,
+        6.8475,
+        5.0845,
+        5.5605,
+        5.106,
+        4.9315,
+        6.7635,
+        6.0855,
+        4.124,
+        4.2495
+      ]
+    },
+    {
+      "hero": "table_candidate",
+      "opponent": "extension_press",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 10.7262,
+      "pooled_se": 0.25142436194008266,
+      "pooled_ci95": [
+        10.233408250597439,
+        11.218991749402562
+      ],
+      "seed_cluster_se": 0.19967152470439495,
+      "seed_cluster_t9_ci95": [
+        10.274511630194539,
+        11.177888369805462
+      ],
+      "seed_means": [
+        10.1245,
+        11.903,
+        9.8185,
+        10.735,
+        11.476,
+        10.365,
+        11.193,
+        10.4675,
+        10.6255,
+        10.554
+      ]
+    },
+    {
+      "hero": "table_candidate",
+      "opponent": "fold_bait",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 8.61515,
+      "pooled_se": 0.24269357545041545,
+      "pooled_ci95": [
+        8.139470592117185,
+        9.090829407882815
+      ],
+      "seed_cluster_se": 0.187840077518676,
+      "seed_cluster_t9_ci95": [
+        8.190226223191305,
+        9.040073776808695
+      ],
+      "seed_means": [
+        7.9425,
+        9.177,
+        7.5205,
+        8.873,
+        8.6925,
+        8.2525,
+        9.3865,
+        8.8985,
+        9.1005,
+        8.308
+      ]
+    },
+    {
+      "hero": "table_candidate",
+      "opponent": "maniac",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 5.52935,
+      "pooled_se": 0.24943105849722144,
+      "pooled_ci95": [
+        5.040465125345446,
+        6.018234874654554
+      ],
+      "seed_cluster_se": 0.29678237490719617,
+      "seed_cluster_t9_ci95": [
+        4.857981624828404,
+        6.200718375171596
+      ],
+      "seed_means": [
+        4.824,
+        7.318,
+        4.3385,
+        5.886,
+        5.3385,
+        5.7825,
+        6.31,
+        6.0295,
+        5.2115,
+        4.255
+      ]
+    },
+    {
+      "hero": "table_candidate",
+      "opponent": "min_raise",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 7.7822,
+      "pooled_se": 0.2335346016268589,
+      "pooled_ci95": [
+        7.324472180811356,
+        8.239927819188644
+      ],
+      "seed_cluster_se": 0.23742911456778934,
+      "seed_cluster_t9_ci95": [
+        7.245098027837224,
+        8.319301972162776
+      ],
+      "seed_means": [
+        7.8195,
+        9.0685,
+        7.2525,
+        6.8375,
+        7.6205,
+        7.5915,
+        8.871,
+        8.01,
+        6.8215,
+        7.9295
+      ]
+    },
+    {
+      "hero": "table_candidate",
+      "opponent": "mono_board",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 10.07335,
+      "pooled_se": 0.2090921601373258,
+      "pooled_ci95": [
+        9.663529366130842,
+        10.483170633869157
+      ],
+      "seed_cluster_se": 0.23868640572470345,
+      "seed_cluster_t9_ci95": [
+        9.533403837640959,
+        10.61329616235904
+      ],
+      "seed_means": [
+        9.8465,
+        10.834,
+        8.5945,
+        9.5445,
+        10.167,
+        10.559,
+        11.149,
+        10.354,
+        10.3135,
+        9.3715
+      ]
+    },
+    {
+      "hero": "table_candidate",
+      "opponent": "original557",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": -0.22365,
+      "pooled_se": 0.15387846966386365,
+      "pooled_ci95": [
+        -0.5252518005411727,
+        0.07795180054117276
+      ],
+      "seed_cluster_se": 0.08475323822066556,
+      "seed_cluster_t9_ci95": [
+        -0.4153751449063722,
+        -0.0319248550936278
+      ],
+      "seed_means": [
+        -0.202,
+        -0.218,
+        0.1205,
+        0.237,
+        -0.3445,
+        -0.203,
+        -0.1145,
+        -0.4255,
+        -0.396,
+        -0.6905
+      ]
+    },
+    {
+      "hero": "table_candidate",
+      "opponent": "patched_formula87",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 0.24415,
+      "pooled_se": 0.15790367296153524,
+      "pooled_ci95": [
+        -0.06534119900460902,
+        0.5536411990046091
+      ],
+      "seed_cluster_se": 0.13332522996209098,
+      "seed_cluster_t9_ci95": [
+        -0.057452623932833985,
+        0.545752623932834
+      ],
+      "seed_means": [
+        -0.129,
+        0.1435,
+        -0.244,
+        0.829,
+        -0.1235,
+        0.5265,
+        0.8165,
+        0.6015,
+        0.2235,
+        -0.2025
+      ]
+    }
+  ],
+  "additional_formula_probe_matchups": [
+    {
+      "hero": "patched_formula87",
+      "opponent": "maniac",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 5.5109,
+      "pooled_se": 0.25013737223673504,
+      "pooled_ci95": [
+        5.020630750415999,
+        6.001169249584001
+      ],
+      "seed_cluster_se": 0.236575520007178,
+      "seed_cluster_t9_ci95": [
+        4.975728992886588,
+        6.0460710071134125
+      ],
+      "seed_means": [
+        4.5405,
+        6.138,
+        4.483,
+        5.706,
+        5.556,
+        4.656,
+        6.7195,
+        5.9425,
+        5.9735,
+        5.394
+      ]
+    },
+    {
+      "hero": "patched_formula87",
+      "opponent": "calling_station",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 12.31485,
+      "pooled_se": 0.16629500849615142,
+      "pooled_ci95": [
+        11.988911783347543,
+        12.640788216652457
+      ],
+      "seed_cluster_se": 0.14483998929853592,
+      "seed_cluster_t9_ci95": [
+        11.987199180756988,
+        12.642500819243011
+      ],
+      "seed_means": [
+        12.4335,
+        12.737,
+        11.401,
+        12.081,
+        11.9425,
+        12.708,
+        12.937,
+        12.0275,
+        12.5165,
+        12.3645
+      ]
+    },
+    {
+      "hero": "patched_formula87",
+      "opponent": "min_raise",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 7.81735,
+      "pooled_se": 0.23318092488907236,
+      "pooled_ci95": [
+        7.360315387217418,
+        8.274384612782582
+      ],
+      "seed_cluster_se": 0.20310591175268353,
+      "seed_cluster_t9_ci95": [
+        7.357892506933627,
+        8.276807493066373
+      ],
+      "seed_means": [
+        7.607,
+        8.5285,
+        6.976,
+        6.7405,
+        8.0695,
+        7.791,
+        8.8385,
+        8.219,
+        7.7105,
+        7.693
+      ]
+    },
+    {
+      "hero": "patched_formula87",
+      "opponent": "exploiter",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 5.60835,
+      "pooled_se": 0.25094492595654594,
+      "pooled_ci95": [
+        5.11649794512517,
+        6.1002020548748295
+      ],
+      "seed_cluster_se": 0.3060288208105026,
+      "seed_cluster_t9_ci95": [
+        4.9160647109983415,
+        6.300635289001658
+      ],
+      "seed_means": [
+        4.0485,
+        6.719,
+        5.375,
+        5.406,
+        6.6225,
+        5.92,
+        6.6905,
+        6.118,
+        4.443,
+        4.741
+      ]
+    },
+    {
+      "hero": "patched_formula87",
+      "opponent": "mono_board",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 10.0628,
+      "pooled_se": 0.20977189049203915,
+      "pooled_ci95": [
+        9.651647094635603,
+        10.473952905364396
+      ],
+      "seed_cluster_se": 0.2578536966748565,
+      "seed_cluster_t9_ci95": [
+        9.47949441312773,
+        10.646105586872268
+      ],
+      "seed_means": [
+        9.892,
+        10.958,
+        8.366,
+        9.386,
+        9.9105,
+        10.77,
+        10.8485,
+        9.9845,
+        10.8015,
+        9.711
+      ]
+    },
+    {
+      "hero": "patched_formula87",
+      "opponent": "extension_press",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 10.6224,
+      "pooled_se": 0.25179580404902235,
+      "pooled_ci95": [
+        10.128880224063916,
+        11.115919775936085
+      ],
+      "seed_cluster_se": 0.23399762344472166,
+      "seed_cluster_t9_ci95": [
+        10.093060600060154,
+        11.151739399939848
+      ],
+      "seed_means": [
+        9.709,
+        11.9485,
+        9.945,
+        11.2925,
+        10.599,
+        10.165,
+        11.5885,
+        10.4385,
+        10.2845,
+        10.2535
+      ]
+    },
+    {
+      "hero": "patched_formula87",
+      "opponent": "fold_bait",
+      "paired_deals": 10000,
+      "hands": 20000,
+      "seeds": 10,
+      "mean_bb_per_deal": 8.458,
+      "pooled_se": 0.24237546944115174,
+      "pooled_ci95": [
+        7.982944079895343,
+        8.933055920104657
+      ],
+      "seed_cluster_se": 0.24741999829349998,
+      "seed_cluster_t9_ci95": [
+        7.898297078654995,
+        9.017702921345006
+      ],
+      "seed_means": [
+        7.28,
+        9.591,
+        7.26,
+        8.8275,
+        8.68,
+        8.4875,
+        9.247,
+        8.7935,
+        7.7855,
+        8.628
+      ]
+    }
+  ],
+  "notes": [
+    "Every opponent uses10seeds x1000duplicatepaireddeals, freshmemoryperhalf; table source explicitlyasserted equity_table and frozen baselines shipped_proxy.",
+    "OneCPUperprocess, seven concurrent processes onCPUs1..7,BLASthreads1. Immutablecandidate snapshot isolates ongoing integration edits.",
+    "CIs unadjusted per matchup; pooledjudgeinterval treatsdealsiid; seedcluster uses10seedmeans and t9=2.262157.",
+    "Original557 retainsoriginalsilenterrorbehavior; observed_decide_exceptions is harness instrumentation, not proof no originalhand_endfailures.",
+    "No runnable smallmodelvariant exists; earlier exploratoryMLPpilot was not deployed and used invalid canonicalization, so is not a valid opponent."
+  ]
+}

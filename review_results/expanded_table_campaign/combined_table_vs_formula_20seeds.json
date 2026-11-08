@@ -1,0 +1,41 @@
+{
+  "paired_deals": 20000,
+  "hands": 40000,
+  "seeds": 20,
+  "mean_bb_per_deal": 0.117775,
+  "pooled_ci95": [
+    -0.09919600225973753,
+    0.33474600225973755
+  ],
+  "seed_cluster_t19_ci95": [
+    -0.11528740050755328,
+    0.3508374005075533
+  ],
+  "seed_means": {
+    "integration:seed-01": -0.7265,
+    "integration:seed-02": -0.0805,
+    "integration:seed-03": 0.1035,
+    "integration:seed-04": -0.654,
+    "integration:seed-05": -0.245,
+    "integration:seed-06": -0.1175,
+    "integration:seed-07": 0.9115,
+    "integration:seed-08": -0.364,
+    "integration:seed-09": 0.2325,
+    "integration:seed-10": 0.854,
+    "expanded:seed-01": -0.129,
+    "expanded:seed-02": 0.1435,
+    "expanded:seed-03": -0.244,
+    "expanded:seed-04": 0.829,
+    "expanded:seed-05": -0.1235,
+    "expanded:seed-06": 0.5265,
+    "expanded:seed-07": 0.8165,
+    "expanded:seed-08": 0.6015,
+    "expanded:seed-09": 0.2235,
+    "expanded:seed-10": -0.2025
+  },
+  "notes": [
+    "Combines BOTH disjoint10seedtable-vs-patched-formula campaigns, same runtimecontenthashes, no cherry-picking.",
+    "Expanded common-seed9opponentmatrix remains separatelyreported; this20seedcomparison is stronger availableevidence for tablevsformula.",
+    "Positive =tablewins; bothCIs includezero, so no demonstratedwinrateimprovement."
+  ]
+}

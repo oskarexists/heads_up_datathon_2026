@@ -1,0 +1,34 @@
+{
+  "validated_orbits": 1000,
+  "table_orbits": 19998,
+  "validation_worlds_per_orbit": 38416,
+  "total_new_worlds": 38416000,
+  "selection_seed": 997114291,
+  "world_seed_namespace": 91988771,
+  "workers": 16,
+  "wall_seconds": 18.088829104992328,
+  "table_sha256": "5652c5d72a2e3b74b3ca416b6058a256c706886c772ad168939743fa7efe67ec",
+  "frozen_formula_code_sha": "87fde9eac6521232ee411d021b622ce45fe7847c",
+  "table": {
+    "rmse": 0.0033948475553054235,
+    "mae": 0.0026814348188254895,
+    "multiplicity_weighted_rmse": 0.0033703876327143677,
+    "multiplicity_weighted_mae": 0.002668931993502285,
+    "validation_noise_adjusted_rmse_estimate": 0.002328288632058429
+  },
+  "formula": {
+    "rmse": 0.01476815797503996,
+    "mae": 0.011550221635082602,
+    "multiplicity_weighted_rmse": 0.01393451143755822,
+    "multiplicity_weighted_mae": 0.010964484914094328,
+    "validation_noise_adjusted_rmse_estimate": 0.014560028434249216
+  },
+  "mean_validation_se": 0.002470184672121922,
+  "max_validation_halfwidth95": 0.0049891530909256,
+  "notes": [
+    "Independent validation worlds use disjoint RNG namespace from generation; selected canonical orbits uniformly without replacement.",
+    "Table covers all orbits; held out refers to new worlds, not excluding these orbits from table generation. Original formula historical training data is unknown.",
+    "Validation means are Monte Carlo estimates, not exact equity. Both raw and multiplicity-weighted metrics reported.",
+    "Noise-adjusted RMSE subtracts estimated independent validation variance, not table-generation variance; it is an estimate not a confidence guarantee."
+  ]
+}

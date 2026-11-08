@@ -333,6 +333,38 @@ taskset -c 0 /tmp/poker-venv-review/bin/python review_harness.py \
 
 Limits of this comparison: the held-out set is 1000 of 19998 orbits, not every orbit. Both Monte Carlo means have error of a few thousandths; agreement at the noise floor is not exact equity. The formula's 0.015 RMSE is on the equity scale (full-table orbit means run from 0.099 to 0.693), and the paired match is the test of whether that difference changes bb/deal. Ten seeds do not pin a difference as small as 0.01 bb/deal. In-process halves reset `memory` and the 8 s bank; they do not open a new HTTP server per half. The smoke test is the read-only startup measurement. The 10-seed campaign of `87fde9e` versus `5571729` was not rerun. Worker checkpoints under `review_results/preflop_equity/chunks/` were kept and left untracked.
 
+The coordinator independently rechecked commit `05e830fe0e0eb2617185849a06c8a8570516f8cd`: 38 tests, `check_build` startup 1 s and image addition 38 MB, and runtime hashes equal to the expanded-campaign snapshot. That commit is pushed. The notes below are documentation of campaigns already finished. They do not change the bot, the generator, the harness, or the default (`AGENT_PREFLOP` unset still loads the equity table; `AGENT_PREFLOP=proxy` still loads the shipped formula percentile).
+
+## Expanded table campaign
+
+The coordinator ran this. It was not rerun here. Snapshot: `review_results/expanded_table_campaign/`. Runtime files are byte-identical to `05e830f` (`runtime_snapshot.json`, 0 hash mismatches on recheck). Hero source was forced to `equity_table`. Baselines were asserted `shipped_proxy`. One CPU per process, pinned to distinct CPUs 1–7. Observed decide exceptions 0. Illegal actions 0. Each primary row is 10 seeds × 1000 paired deals (10,000 paired deals, 20,000 hands). Nine primary matchups are 90,000 paired deals. Positive mean means the table bot gained chips. Intervals are per matchup and are not adjusted for multiple comparisons. The pooled interval treats paired deals as iid and uses z=1.96. The seed-cluster interval uses the 10 seed means and t with 9 df.
+
+| Opponent | Mean bb/deal | Pooled 95% CI | Seed-cluster 95% CI |
+| --- | ---: | --- | --- |
+| calling_station | +12.33000 | [+11.999491, +12.660509] | [+11.902522, +12.757478] |
+| exploiter | +5.42085 | [+4.930226, +5.911474] | [+4.754627, +6.087073] |
+| extension_press | +10.72620 | [+10.233408, +11.218992] | [+10.274512, +11.177888] |
+| fold_bait | +8.61515 | [+8.139471, +9.090829] | [+8.190226, +9.040074] |
+| maniac | +5.52935 | [+5.040465, +6.018235] | [+4.857982, +6.200718] |
+| min_raise | +7.78220 | [+7.324472, +8.239928] | [+7.245098, +8.319302] |
+| mono_board | +10.07335 | [+9.663529, +10.483171] | [+9.533404, +10.613296] |
+| original557 | −0.22365 | [−0.525252, +0.077952] | [−0.415375, −0.031925] |
+| patched_formula87 | +0.24415 | [−0.065341, +0.553641] | [−0.057453, +0.545753] |
+
+The seven script rows are all positive, and both of their intervals sit above 0, so those scripts lost chips to the table bot on this design. That is not evidence about a strong field. The same seven scripts also lost to the patched formula bot; those rows are `additional_formula_probe_matchups` in `aggregate.json` and are not part of the nine-row matrix.
+
+`original557` is the row that needs both intervals read together. The mean is **−0.22365** bb/deal (the table bot lost chips). The pooled interval **[−0.525252, +0.077952]** includes 0. The seed-cluster interval **[−0.415375, −0.031925]** does not: it lies entirely below 0. The deal-level interval and the seed-mean interval disagree about whether 0 is inside the band. The cluster band on the negative side is not a win for the table. **This does not show that the table beats the original.** `5571729` still has its original silent error path. A harness count of zero decide exceptions does not prove that original `on_hand_end` never failed quietly. No runnable small-model opponent exists. An earlier MLP pilot used an invalid canonicalization and was not deployed, so it is not a result.
+
+`patched_formula87` in this matrix uses the expanded seeds `table-expanded-20261107-01` … `10`, mean **+0.24415**, and both intervals include 0. That is a different draw from the earlier `table-proxy-20261107` ten seeds (mean −0.0086, both intervals include 0). The two ten-seed sets are disjoint. Combining them, already computed in `combined_table_vs_formula_20seeds.json`, is the check against quoting only one of them: **20 seeds, 20,000 paired deals, 40,000 hands, mean +0.117775**. Pooled 95% CI **[−0.099196, +0.334746]**. Seed-cluster 95% CI (t with 19 df) **[−0.115287, +0.350837]**. Both include 0. **Neither the separate tens nor the combined twenty shows a win-rate gain of the table over the patched formula.**
+
+Raw primary rows, 160,000 paired records: `paired_all.csv`. Commands: `completed_jobs.json`. Per-seed logs were not copied.
+
+## Independent preflop validation
+
+The coordinator also ran a second 1,000-orbit check, copied to `review_results/independent_preflop_validation/`. It is not a rerun of the held-out section above. Selection seed `997114291`, world namespace `91988771`, 16 workers, 18.1 s. Each of 1,000 true orbits got 38,416 new worlds: **38,416,000** additional worlds. The new worlds use a different RNG namespace from table generation. The orbits themselves were not held out of the table. The stored table still covers all 19,998 orbits. The frozen formula is the `87fde9e` coefficient vector; its original training sample is unknown.
+
+Against those independent Monte Carlo means, table RMSE is **0.0033948475553** (0.3395 percentage points) and formula RMSE is **0.014768157975** (1.4768 percentage points). Multiplicity-weighted RMSE is **0.003370387633** for the table and **0.013934511438** for the formula. A noise-adjusted table RMSE estimate, subtracting estimated validation variance only, is **0.0023283**. That adjustment is an estimate, not a confidence guarantee, and it does not remove table-generation variance. The independent means are Monte Carlo targets, not exact equity. These figures sit next to the earlier held-out RMSE (table 0.003595, formula 0.015275). They do not promote the table to an exact equity oracle, and they do not by themselves imply a win-rate gain. Per-orbit rows: `per_orbit.csv`. Summary: `summary.json`.
+
 ## Sample limits
 
 - One deal seed for the unpatched table (`review-20261107`) and one for the patch table (`review-patch-20261107`). Another seed will move the means.
