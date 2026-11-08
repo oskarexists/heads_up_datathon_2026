@@ -1,0 +1,4 @@
+verify orbits 19998 in 15.72s parity 0/2000 one_core_samples_per_s 450236.0 workers 16
+STAGE_DONE target 1024 increment 1024 seconds 6.0
+STAGE_DONE target 8192 increment 7168 seconds 60.2
+STAGE_DONE target 38416 increment 30224 seconds 247.0

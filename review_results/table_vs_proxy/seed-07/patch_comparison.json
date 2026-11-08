@@ -1,0 +1,46 @@
+{
+  "kind": "patch_comparison",
+  "ci_formula": "paired_bb[d] = (hero_net_chips_half1[d] + hero_net_chips_half2[d]) / big_blind; mean = sum(paired_bb)/n; SE = sample_stdev(paired_bb, ddof=1)/sqrt(n); CI = mean \u00b1 1.96*SE. n = deals. This is the judge's paired-deal interval, not an interval on independent single hands.",
+  "match_seed": "table-proxy-20261107-07",
+  "num_deals": 1000,
+  "rerank_benchmark": {
+    "rows_half": 400,
+    "rows_full": 800,
+    "repeats": 30,
+    "half_batch_seconds": 0.00010829329936920354,
+    "full_pool_seconds": 0.00015109056645693877,
+    "extra_seconds_to_rerank_old_rows": 4.279726708773523e-05,
+    "note": "Extra cost of recomputing street strength on the combined pool instead of only the new batch."
+  },
+  "patched_vs_original": {
+    "opponent": "shipped-proxy",
+    "hero": "equity-table",
+    "n_deals": 1000,
+    "match_seed": "table-proxy-20261107-07",
+    "mean_bb_per_deal": 0.9115,
+    "std_bb": 15.981875299478721,
+    "se_bb": 0.5053912722713839,
+    "ci95": [
+      -0.07906689365191244,
+      1.9020668936519125
+    ],
+    "z": 1.96,
+    "verdict_if_this_were_the_match": "CHOP",
+    "reason": "interval [-0.079, +1.902] includes 0",
+    "half1_hero_chips": 621,
+    "half2_hero_chips": 1202,
+    "illegal_actions": 0,
+    "decide_exceptions": 0,
+    "wall_seconds": 17.094869710010244,
+    "hero_internal_time_half1_s": 4.124669924291084,
+    "hero_internal_time_half2_s": 4.172590147849405,
+    "interval_includes_zero": true
+  },
+  "patched_vs_opponents": [],
+  "original_vs_opponents": [],
+  "hero_preflop_source": "equity_table",
+  "baseline_preflop_source": "shipped_proxy",
+  "time_bank_seconds": 8.0,
+  "fresh_memory_each_half": true,
+  "check_build": "not measured by this harness. An earlier base-image build was terminated while the base image was still uncached. That note is history, not the result of this match."
+}

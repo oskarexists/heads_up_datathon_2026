@@ -1,0 +1,96 @@
+{
+  "hero_sha": "87fde9eac6521232ee411d021b622ce45fe7847c",
+  "baseline_sha": "5571729ae285bd2e534e0b09c77a83a95ad2899e",
+  "paired_deals": 10000,
+  "hands": 20000,
+  "seeds": 10,
+  "mean_bb_per_deal": 0.1994,
+  "pooled_iid_judge_se": 0.14372922379591876,
+  "pooled_iid_judge_ci95": [
+    -0.08230927864000079,
+    0.48110927864000075
+  ],
+  "seed_cluster_se": 0.1286518298872322,
+  "seed_cluster_t_df9_ci95": [
+    -0.0916306584791379,
+    0.4904306584791379
+  ],
+  "seed_results": [
+    {
+      "seed": "seed-01",
+      "n": 1000,
+      "mean": 0.1515,
+      "decide_exceptions": 0,
+      "illegal_actions": 0
+    },
+    {
+      "seed": "seed-02",
+      "n": 1000,
+      "mean": 0.07,
+      "decide_exceptions": 0,
+      "illegal_actions": 0
+    },
+    {
+      "seed": "seed-03",
+      "n": 1000,
+      "mean": -0.106,
+      "decide_exceptions": 0,
+      "illegal_actions": 0
+    },
+    {
+      "seed": "seed-04",
+      "n": 1000,
+      "mean": -0.149,
+      "decide_exceptions": 0,
+      "illegal_actions": 0
+    },
+    {
+      "seed": "seed-05",
+      "n": 1000,
+      "mean": -0.0285,
+      "decide_exceptions": 0,
+      "illegal_actions": 0
+    },
+    {
+      "seed": "seed-06",
+      "n": 1000,
+      "mean": 0.054,
+      "decide_exceptions": 0,
+      "illegal_actions": 0
+    },
+    {
+      "seed": "seed-07",
+      "n": 1000,
+      "mean": 0.094,
+      "decide_exceptions": 0,
+      "illegal_actions": 0
+    },
+    {
+      "seed": "seed-08",
+      "n": 1000,
+      "mean": 0.5605,
+      "decide_exceptions": 0,
+      "illegal_actions": 0
+    },
+    {
+      "seed": "seed-09",
+      "n": 1000,
+      "mean": 1.2175,
+      "decide_exceptions": 0,
+      "illegal_actions": 0
+    },
+    {
+      "seed": "seed-10",
+      "n": 1000,
+      "mean": 0.13,
+      "decide_exceptions": 0,
+      "illegal_actions": 0
+    }
+  ],
+  "notes": [
+    "1000 paired deals per independent seed; memory reset each half; runtime1CPU",
+    "Pooled interval is judge formula; clustered seed interval accounts for within-half adaptation only approximately with10clusters",
+    "In-process simulation, not full HTTP timing; baseline retains original silent exception behavior",
+    "Per-seed patch_comparison check_build field is a stale static harness string; exact87fde9 official check_build separately PASSED, see ../check-build-87fde9.log"
+  ]
+}

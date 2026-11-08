@@ -1,0 +1,51 @@
+{
+  "arrays": {
+    "equity_mean": {
+      "dtype": "float64",
+      "file": "equity_mean.npy",
+      "nbytes": 159984,
+      "sha256": "ec7586a75e15d9a51be3c89bf37fc8a299590873ded40158c5902e1212783db4",
+      "shape": [
+        19998
+      ]
+    },
+    "equity_n": {
+      "dtype": "int32",
+      "file": "equity_n.npy",
+      "nbytes": 79992,
+      "sha256": "1fdb8706c389f27aabf5f461a04b2b5453de66b6187254b26e992fef83d62d1b",
+      "shape": [
+        19998
+      ]
+    },
+    "equity_pct": {
+      "dtype": "float32",
+      "file": "equity_pct.npy",
+      "nbytes": 1507968,
+      "sha256": "60e7716d99c280a5a9c0fe3430ed4448e162bc88b5588dd1f4de0d863287d59f",
+      "shape": [
+        376992
+      ]
+    },
+    "equity_ties": {
+      "dtype": "int32",
+      "file": "equity_ties.npy",
+      "nbytes": 79992,
+      "sha256": "774a72cf631c1ff825481a19e3c11d69041a732b659725aa4dbc54d4543ea5d0",
+      "shape": [
+        19998
+      ]
+    },
+    "equity_wins": {
+      "dtype": "int32",
+      "file": "equity_wins.npy",
+      "nbytes": 79992,
+      "sha256": "f8174d4f91582fd361013da40f6f88db0dd835dd9109f1a7dcdbe1564209c2b7",
+      "shape": [
+        19998
+      ]
+    }
+  },
+  "format": "holey-donut-equity-v1",
+  "samples_per_orbit": 38416
+}

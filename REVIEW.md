@@ -265,7 +265,73 @@ Regenerate:
 
 Measured on this host, one CPU: rebuild **0.848 s**, file reload **0.016 s**, fresh `import agent` **3.666 s** (that import still runs `evaluator.warmup()`, which builds the showdown dict). Tracemalloc peak for that import **81.6 MB**. Uncompressed array bytes **15,039,512** including the 8-byte straight-rank vector. The five policy arrays the bot already kept in memory are **15,039,504** bytes (14.34 MiB). Largest file `tbl.npy` is 9.0 MB, under 100 MB. No Git LFS.
 
-`test_shipped_lookup_matches_a_fresh_build_and_is_read_only` rebuilds in the test process and requires bit equality with the loaded arrays, and it checks that a tampered file fails the hash. Same arrays means the same percentile order and the same actions for a fixed RNG. This did not change the policy. Pytest after the switch: **27 passed**, 1 Starlette warning, 7.33 s.
+`test_shipped_lookup_matches_a_fresh_build_and_is_read_only` rebuilds in the test process and requires bit equality with the loaded arrays, and it checks that a tampered file fails the hash. Same arrays means the same percentile order and the same actions for a fixed RNG. Pytest on the pushed lookup commit `87fde9e`: **27 passed**. Official `check_build` on that exact snapshot passed: startup **1.0 s**, image **+36 MB**, log `../check-build-87fde9.log`. That pass does not cover the equity-table default below. The candidate that loads the table has its own `check_build`, in the preflop section.
+
+## Ten seeds against the original
+
+The coordinator ran 10 seeds × 1000 paired deals of stable `87fde9e` versus `5571729` in `../multi-seed-87fde9`. This tree did not rerun or edit that campaign. Snapshot: `review_results/multi_seed_87fde9/aggregate.json`.
+
+Pooled mean **+0.1994** bb/deal on 10,000 paired deals. Pooled iid judge 95% CI **[-0.082309, +0.481109]**. Seed-cluster interval (10 seeds, t with 9 df) **[-0.091631, +0.490431]**. Both include 0. **This is not a demonstrated win-rate gain.** Per-seed means in that file run from −0.149 to +1.2175. The printed seed-09 interval is entirely above 0; the other nine printed intervals include 0. Illegal actions 0. Decide exceptions 0. Runtime policy matches `527d20a` except that startup loads the lookup files.
+
+## Preflop suit orbits
+
+A first-appearance suit label is not a suit orbit. It sorted cards by id, so suit 0 was renamed before suit 1, and `canon_key([0,1,4,8,12])` was `(0,1,4,8,12)` while the suit-0↔1 image `[1,0,5,9,13]` was `(0,1,5,9,13)`. The census that reported **35,334** orbits, and the 323×2048 pilot metrics computed from it, are **not suit-disjoint and are not evidence**. Those files were deleted. Nothing below uses them.
+
+The key is now the lexicographic minimum of the sorted 5-card id under all 24 suit permutations. Burnside's count is `(376992 + 6*16560 + 8*450) / 24 = 19998`. `test_suit_orbits_match_burnside_and_every_suit_perm` builds all `C(36,5)` holdings and checks both of these, exhaustively: reordering the 24 image keys by the group action preserves the orbit id, and recomputing the lex-min on every permuted holding preserves it too. The counterexample pair is one orbit. Orbit sizes divide 24 and sum to 376992.
+
+Equity samples are fresh permutations of the 31-card deck (`Generator.permuted`), one stream per `(orbit, stage)` from `SeedSequence([20261107, orbit, stage])`. They do not read `_PERM_POOL`. Ties are 0.5. Showdown uses the shipped dense pair×triple table (`agent._best`). `test_dense_lookup_matches_omaha_score_on_random_deals` requires the win/tie/loss to match `evaluator.omaha_score` on 600 random worlds. The table job repeats that check on 2000 worlds before it samples, and it refuses to start if any world disagrees.
+
+The full table is staged, all 19998 orbits each time: 1024 samples, then 8192, then 38416. 38416 is the worst-case pointwise n for a 95% half-width of 0.005 (`1.96 * 0.5 / sqrt(n)`). That is not a simultaneous band and not an absolute-error guarantee. The job writes `review_results/preflop_equity/progress.json` and atomic per-worker checkpoints under `chunks/`. A finished stage is `stage_{n}.npz` with that stage's increment only. `test_equity_checkpoint_resume_matches_one_shot` checks that a stopped run and a different batch size reproduce the same counts. Checkpoints stay on disk and are not part of the artifact commit.
+
+The finished `progress.json` had counted the last stage twice. Worker files for stage 2 store `30224` new worlds per finished orbit (`38416 - 8192`). The final snapshot passed an increment of 0, and the old total added `N_ORBITS * 38416` to those worker samples: `1372662720` worlds, `178.6755518533944%`. The repair counts each stage's increment once: `19998 * 38416 = 768243168` unique worlds, `100%`. `test_progress_unique_worlds_do_not_double_count_final_stage` builds that `n_this=0` snapshot on a toy schedule and requires 160, not 240. `test_saved_equity_progress_counts_each_world_once` locks the repaired file. The job's own elapsed time is still **330.06 s**. The rate implied by the unique count is about **2.328e6** worlds/s. The double-counted total is kept on the file as `samples_done_double_counted_final_stage` so the percent is not a clamp of a wrong numerator.
+
+Pointwise estimated 95% half-widths on the merged table: min **0.00298939**, median **0.00485860**, max **0.0050000114**. The strict `half <= 0.005` flag is false because the max sits `1.14e-11` over 0.005. `n` is exactly 38416, which is the n where `1.96 * 0.5 / sqrt(n) = 0.005`. That is still not a simultaneous or absolute guarantee.
+
+## Equity table in the bot
+
+`tools/preflop_equity_pilot.py publish` writes `lookup_tables/equity_{pct,mean,wins,ties,n}.npy` and `equity_manifest.json` (`holey-donut-equity-v1`). Numeric `.npy`, `allow_pickle=False`, no pickle, no Git LFS. Startup checks format, dtype, shape, nbytes, and sha256. Loading does not write. A bad hash or version raises (`test_equity_manifest_rejects_a_bad_hash_and_version`). There is no runtime generation.
+
+The percentile is the multiplicity-weighted rank of the orbit means. Orbit size is the weight, so a size-24 orbit counts 24 times and a smaller orbit counts its own size. Equal means, including every suit image of one orbit, share the average rank of that tie. The value does not follow stable-sort order inside the tie (`test_weighted_percentile_uses_multiplicity_not_suit_order`). The array is scattered with `_hand_idx` (colex of the sorted cards). Combination-lex row is not that index: only four of the 376992 rows match, and the publish step refuses to continue if they are identical. `test_published_equity_table_is_suit_invariant_and_hashed` checks all 24 suit images of every holding.
+
+`AGENT_PREFLOP` selects the source. `equity` (the default) uses `equity_pct.npy`. `proxy` uses the shipped formula percentile `_PRE_PCT`. `use_preflop` rebinds the process and sets the env var. `test_preflop_sources_stay_selectable_and_default_is_the_table` starts a fresh interpreter with the variable unset and again with `AGENT_PREFLOP=proxy`. The default was switched to the table only after the loader tests passed. Postflop ranking, the showdown sampler, and the rest of the policy are unchanged. `_make_pool` reads `_RANGE_PCT`, which is whichever source was selected.
+
+## Held-out worlds against the frozen formula
+
+`heldout 1000 38416` drew 1000 orbits with `SeedSequence([20261107, 424242, 100])` and, for each, 38416 new deals from `SeedSequence([20261107, orbit_id, 100])`. Generation used stages 0, 1, and 2 only. Stage 100 is not one of them. Opponent 5 and board 5 are a uniform permutation of the other 31 cards. Ties count 0.5. Showdown is the dense 2+3 table. These fresh means are another Monte Carlo estimate. They are not exact equity and they are not a replay of the table.
+
+On those 1000 orbits the fresh-minus-table RMSE is **0.00359486** (MAE **0.00289074**). Multiplicity-weighted RMSE **0.00362420** (MAE **0.00292371**). The sampling noise floor, `sqrt(mean(se_fresh^2 + se_table^2))` from the outcome variances, is **0.00349484** (weighted **0.00349677**). The observed RMSE is 1.029 times that floor. Worst-case SE of a difference of two independent means at n=38416 is `0.5 * sqrt(2/38416) = 0.00360769`. The table matches a disjoint sample at the noise floor. That is not a proof that either mean equals the true equity.
+
+The frozen formula (`_PRE_COEF` dot `_preflop_features`, not refit) against the same fresh means has RMSE **0.0152750** and MAE **0.0118428** (weighted RMSE **0.0142493**, MAE **0.0112123**), about 4.37 times the noise floor. A suit swap of each representative moves the formula by 0. Against the noisy fresh means on these 1000 orbits, that RMSE is an R^2 of about **0.951**. The source comment's R^2 of 0.89 is a different fit statement and was not remeasured as a claim about that comment. Formula-versus-table on the same orbits (RMSE **0.0152543**) describes the fit to the stored labels. It is not a second held-out truth. Records: `heldout_summary.json`, `heldout_orbits.npz`. Elapsed **20.8 s**.
+
+## Ten seeds, table versus proxy
+
+Hero is this tree with `AGENT_PREFLOP=equity` (`preflop_source` is `equity_table`). Baseline is `../verification-87fde9/agent.py`, the `87fde9e` snapshot: same basic fixes, its own lookup files, and the shipped proxy only. The harness aborts unless those two source names are the ones just stated. The percentile arrays are not equal. Each seed is one process, `taskset -c 0`, 1000 paired deals, two halves, a new memory dict and an 8.0 s bank each half. Hero internal time was **3.971 s to 4.232 s** per half. Decide exceptions **0**. Illegal actions **0**.
+
+Pooled mean **−0.0086** bb/deal on 10,000 paired deals (20,000 hands). Pooled iid judge 95% CI **[−0.312768, +0.295568]**. Seed-cluster 95% interval (10 seed means, t with 9 df, critical value 2.262157) **[−0.407072, +0.389872]**. Both include 0. **This is not a demonstrated win-rate change.** Per-seed means: −0.7265, −0.0805, +0.1035, −0.654, −0.245, −0.1175, +0.9115, −0.364, +0.2325, +0.854. Raw rows: `review_results/table_vs_proxy/paired_all.csv` and `seed-XX/patched_vs_original.csv`. Summary: `aggregate.json`.
+
+The match harness no longer writes the old sentence that called `check_build` an unfinished current failure. That earlier base-image cancellation stays history in the section above. This harness does not measure `check_build`.
+
+Official `./tools/check_build.sh` on this candidate, base image cached: **EXIT 0**. Image addition **38 MB** (cap 3072 MB). The smoke container is `--read-only`, `--network none`, `--tmpfs /tmp`, `--cap-drop ALL`, user `10001`. `GET /` in **1.0 s**. Five `/act` calls, slowest **31 ms**. `SMOKE TEST PASSED`. Log: `/tmp/check-build-equity-table.log`.
+
+Pytest after the default switch: **38 passed**, 1 Starlette deprecation warning, 25.7 s. The 38 tests are the previous 27 plus the orbit, checkpoint, equity-loader, progress, percentile, and seed-cluster checks.
+
+Reproduce:
+
+```bash
+/tmp/poker-venv-review/bin/python -m pytest -q
+/tmp/poker-venv-review/bin/python tools/preflop_equity_pilot.py publish
+/tmp/poker-venv-review/bin/python tools/preflop_equity_pilot.py heldout 1000 38416
+# one seed; repeat 01..10. Do not set AGENT_PREFLOP in the shell.
+taskset -c 0 /tmp/poker-venv-review/bin/python review_harness.py \
+  --baseline ../verification-87fde9/agent.py --opponents '' --deals 1000 \
+  --seed table-proxy-20261107-01 --hero-label equity-table \
+  --baseline-label shipped-proxy --hero-preflop equity \
+  --expect-hero-source equity_table --expect-baseline-source shipped_proxy \
+  --out review_results/table_vs_proxy/seed-01
+./tools/check_build.sh
+```
+
+Limits of this comparison: the held-out set is 1000 of 19998 orbits, not every orbit. Both Monte Carlo means have error of a few thousandths; agreement at the noise floor is not exact equity. The formula's 0.015 RMSE is on the equity scale (full-table orbit means run from 0.099 to 0.693), and the paired match is the test of whether that difference changes bb/deal. Ten seeds do not pin a difference as small as 0.01 bb/deal. In-process halves reset `memory` and the 8 s bank; they do not open a new HTTP server per half. The smoke test is the read-only startup measurement. The 10-seed campaign of `87fde9e` versus `5571729` was not rerun. Worker checkpoints under `review_results/preflop_equity/chunks/` were kept and left untracked.
 
 ## Sample limits
 
@@ -281,7 +347,7 @@ Measured on this host, one CPU: rebuild **0.848 s**, file reload **0.016 s**, fr
 
 Line numbers are the patched `agent.py`. Constants that the patch did not touch match `5571729`.
 
-Import loads a dense pair-by-triple rank table from `lookup_tables/` (numeric `.npy`, `allow_pickle=False`). `tools/generate_lookup_tables.py` is what calls `_build_tables` against `evaluator.get_table()`. Startup does not rebuild it. The preflop label is still the 16-coefficient linear proxy. `_PRE_COEF` (`agent.py:89-90`) is applied in `_preflop_strength` (`agent.py:170-200`). The comment in source says it was fitted offline to Monte Carlo equity with R^2 = 0.89. That R^2 was not remeasured here. The sixteen features, in order, are: rank sum / 40, max rank / 8, ace count / 2, pair count / 2, highest pair rank, a trips flag, number of suits with at least two cards / 2, a three-suited flag, an ace-suited flag, a king-suited flag, the fullest straight window / 5, count of windows with at least 3 ranks / 6, count with at least 4 / 6, distinct ranks / 5, adjacent-rank popcount / 4, and an intercept. `_PRE_PCT` is that score's percentile over every 5-card holding. The number depends only on those five cards. It is not conditioned on a specific opponent combo, so two hands with the same counts share a percentile even when they block different nut suits. That is a limit of the scalar, not of the sampler. `_make_pool` removes the hero's cards and the board from the deck before it draws an opponent holding, so the Monte Carlo does apply that card removal. The weight on a sampled hand is still `_PRE_PCT` of the opponent's five cards, or `_board_strength` of that holding plus the board. Removing dead cards and pricing suit blockers against a continuing range are different things.
+Import loads a dense pair-by-triple rank table from `lookup_tables/` (numeric `.npy`, `allow_pickle=False`). `tools/generate_lookup_tables.py` is what calls `_build_tables` against `evaluator.get_table()`. Startup does not rebuild it. The default preflop label is now the equity-table percentile (`AGENT_PREFLOP=equity`, or unset). `AGENT_PREFLOP=proxy` selects the 16-coefficient formula percentile instead. `_PRE_COEF` is applied in `_preflop_strength`. The comment in source says it was fitted offline to Monte Carlo equity with R^2 = 0.89. The held-out section reports a different comparison and does not replace that comment. The sixteen features, in order, are: rank sum / 40, max rank / 8, ace count / 2, pair count / 2, highest pair rank, a trips flag, number of suits with at least two cards / 2, a three-suited flag, an ace-suited flag, a king-suited flag, the fullest straight window / 5, count of windows with at least 3 ranks / 6, count with at least 4 / 6, distinct ranks / 5, adjacent-rank popcount / 4, and an intercept. `_PRE_PCT` is that score's percentile over every 5-card holding. The equity percentile is the multiplicity-weighted rank of the Monte Carlo orbit means, stored in `equity_pct.npy`. Neither number is conditioned on a specific opponent combo. `_make_pool` removes the hero's cards and the board from the deck before it draws an opponent holding, so the Monte Carlo does apply that card removal. The weight on a sampled hand is `_RANGE_PCT` of the opponent's five cards (the selected preflop source), or `_board_strength` of that holding plus the board. Removing dead cards and pricing suit blockers against a continuing range are different things.
 
 Postflop, `_make_pool` draws opponent holdings from the cards that are not in the hero's hand or on the board, plus a private run-out, from a fixed permutation table (`_PERM_POOL`, seed `12345 + deck size`). `_board_strength` ranks those holdings by the made Omaha category plus, before the river, 1.3 for a flush draw and 0.8 for a straight draw. A straight draw also needs two distinct board ranks in the window. The scale is 1.0 on the flop and 0.6 on the turn. That rank is turned into a within-sample percentile by `_percentile` / `_street_pct`. It is not the showdown score. Showdown equity is a separate Monte Carlo: `_fill_wins` deals the stored run-out and compares `_best` for hero and opponent.
 

@@ -1,0 +1,214 @@
+{
+  "hero": "working tree default equity table, rebinding AGENT_PREFLOP=equity",
+  "baseline": "../verification-87fde9/agent.py shipped proxy percentile; same basic fixes; no equity switch",
+  "hero_preflop_source": "equity_table",
+  "baseline_preflop_source": "shipped_proxy",
+  "deals_per_seed": 1000,
+  "hands_per_seed": 2000,
+  "time_bank_seconds": 8.0,
+  "fresh_memory_each_half": true,
+  "cpu": "taskset -c 0",
+  "decide_exceptions": 0,
+  "illegal_actions": 0,
+  "seed_results": [
+    {
+      "seed": "seed-01",
+      "match_seed": "table-proxy-20261107-01",
+      "n": 1000,
+      "mean": -0.7265,
+      "ci95": [
+        -1.6892655506830216,
+        0.23626555068302169
+      ],
+      "decide_exceptions": 0,
+      "illegal_actions": 0,
+      "wall_seconds": 17.026860368001508,
+      "hero_internal_time_half1_s": 4.190275960922008,
+      "hero_internal_time_half2_s": 4.220885671995347,
+      "time_bank_seconds": 8.0,
+      "fresh_memory_each_half": true
+    },
+    {
+      "seed": "seed-02",
+      "match_seed": "table-proxy-20261107-02",
+      "n": 1000,
+      "mean": -0.0805,
+      "ci95": [
+        -1.0437264110740478,
+        0.8827264110740479
+      ],
+      "decide_exceptions": 0,
+      "illegal_actions": 0,
+      "wall_seconds": 17.113741390989162,
+      "hero_internal_time_half1_s": 4.095072471973253,
+      "hero_internal_time_half2_s": 4.151138543558773,
+      "time_bank_seconds": 8.0,
+      "fresh_memory_each_half": true
+    },
+    {
+      "seed": "seed-03",
+      "match_seed": "table-proxy-20261107-03",
+      "n": 1000,
+      "mean": 0.1035,
+      "ci95": [
+        -0.902544348849618,
+        1.109544348849618
+      ],
+      "decide_exceptions": 0,
+      "illegal_actions": 0,
+      "wall_seconds": 16.90431196699501,
+      "hero_internal_time_half1_s": 4.101157574885292,
+      "hero_internal_time_half2_s": 4.056247954635182,
+      "time_bank_seconds": 8.0,
+      "fresh_memory_each_half": true
+    },
+    {
+      "seed": "seed-04",
+      "match_seed": "table-proxy-20261107-04",
+      "n": 1000,
+      "mean": -0.654,
+      "ci95": [
+        -1.6349702670719841,
+        0.32697026707198396
+      ],
+      "decide_exceptions": 0,
+      "illegal_actions": 0,
+      "wall_seconds": 16.69119213000522,
+      "hero_internal_time_half1_s": 4.057495789224049,
+      "hero_internal_time_half2_s": 3.9883446925668977,
+      "time_bank_seconds": 8.0,
+      "fresh_memory_each_half": true
+    },
+    {
+      "seed": "seed-05",
+      "match_seed": "table-proxy-20261107-05",
+      "n": 1000,
+      "mean": -0.245,
+      "ci95": [
+        -1.20539714714291,
+        0.71539714714291
+      ],
+      "decide_exceptions": 0,
+      "illegal_actions": 0,
+      "wall_seconds": 16.59689186399919,
+      "hero_internal_time_half1_s": 3.9776914659596514,
+      "hero_internal_time_half2_s": 3.971090550359804,
+      "time_bank_seconds": 8.0,
+      "fresh_memory_each_half": true
+    },
+    {
+      "seed": "seed-06",
+      "match_seed": "table-proxy-20261107-06",
+      "n": 1000,
+      "mean": -0.1175,
+      "ci95": [
+        -1.084621312940597,
+        0.849621312940597
+      ],
+      "decide_exceptions": 0,
+      "illegal_actions": 0,
+      "wall_seconds": 17.173235505993944,
+      "hero_internal_time_half1_s": 4.125926772190724,
+      "hero_internal_time_half2_s": 4.204113453335594,
+      "time_bank_seconds": 8.0,
+      "fresh_memory_each_half": true
+    },
+    {
+      "seed": "seed-07",
+      "match_seed": "table-proxy-20261107-07",
+      "n": 1000,
+      "mean": 0.9115,
+      "ci95": [
+        -0.07906689365191244,
+        1.9020668936519125
+      ],
+      "decide_exceptions": 0,
+      "illegal_actions": 0,
+      "wall_seconds": 17.094869710010244,
+      "hero_internal_time_half1_s": 4.124669924291084,
+      "hero_internal_time_half2_s": 4.172590147849405,
+      "time_bank_seconds": 8.0,
+      "fresh_memory_each_half": true
+    },
+    {
+      "seed": "seed-08",
+      "match_seed": "table-proxy-20261107-08",
+      "n": 1000,
+      "mean": -0.364,
+      "ci95": [
+        -1.3078909474547826,
+        0.5798909474547825
+      ],
+      "decide_exceptions": 0,
+      "illegal_actions": 0,
+      "wall_seconds": 17.24763675002032,
+      "hero_internal_time_half1_s": 4.23185842303792,
+      "hero_internal_time_half2_s": 4.076609903248027,
+      "time_bank_seconds": 8.0,
+      "fresh_memory_each_half": true
+    },
+    {
+      "seed": "seed-09",
+      "match_seed": "table-proxy-20261107-09",
+      "n": 1000,
+      "mean": 0.2325,
+      "ci95": [
+        -0.6694439041959961,
+        1.1344439041959962
+      ],
+      "decide_exceptions": 0,
+      "illegal_actions": 0,
+      "wall_seconds": 16.47411404098966,
+      "hero_internal_time_half1_s": 3.98018504481297,
+      "hero_internal_time_half2_s": 4.0165197886526585,
+      "time_bank_seconds": 8.0,
+      "fresh_memory_each_half": true
+    },
+    {
+      "seed": "seed-10",
+      "match_seed": "table-proxy-20261107-10",
+      "n": 1000,
+      "mean": 0.854,
+      "ci95": [
+        -0.08243181844969638,
+        1.7904318184496963
+      ],
+      "decide_exceptions": 0,
+      "illegal_actions": 0,
+      "wall_seconds": 16.395604043995263,
+      "hero_internal_time_half1_s": 3.997390707838349,
+      "hero_internal_time_half2_s": 3.9766269656829536,
+      "time_bank_seconds": 8.0,
+      "fresh_memory_each_half": true
+    }
+  ],
+  "seeds": 10,
+  "paired_deals": 10000,
+  "hands": 20000,
+  "pooled_mean_bb_per_deal": -0.0086,
+  "pooled_iid_judge_se": 0.15518761523907879,
+  "pooled_iid_judge_ci95": [
+    -0.3127677258685944,
+    0.2955677258685944
+  ],
+  "seed_means": [
+    -0.7265,
+    -0.0805,
+    0.1035,
+    -0.654,
+    -0.245,
+    -0.1175,
+    0.9115,
+    -0.364,
+    0.2325,
+    0.854
+  ],
+  "seed_cluster_mean": -0.008600000000000007,
+  "seed_cluster_se": 0.17614712600550708,
+  "seed_cluster_t_crit_95": 2.2621571627409915,
+  "seed_cluster_ci95": [
+    -0.40707248278959784,
+    0.38987248278959785
+  ],
+  "ci_note": "Pooled interval treats paired deals as iid and uses z=1.96. Seed-cluster interval uses the 10 seed means and t with 9 df. Neither is a proof of a win-rate gain when it contains 0."
+}

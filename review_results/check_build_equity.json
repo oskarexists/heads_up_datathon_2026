@@ -1,0 +1,13 @@
+{
+  "command": "./tools/check_build.sh",
+  "exit": 0,
+  "base_image": "cached",
+  "image_addition_mb": 38,
+  "image_cap_mb": 3072,
+  "startup_get_seconds": 1.0,
+  "act_slowest_ms": 31,
+  "smoke": "SMOKE TEST PASSED",
+  "container": "--read-only --network none --tmpfs /tmp --cap-drop ALL user 10001",
+  "log": "/tmp/check-build-equity-table.log",
+  "note": "This pass is for the equity-table default. The 87fde9e pass was +36 MB and is a different tree."
+}

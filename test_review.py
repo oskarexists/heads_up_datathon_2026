@@ -57,6 +57,226 @@ def test_short_deck_ranking_rules():
     assert wheel < six_high
 
 
+def _load_pilot():
+    import importlib.util
+
+    path = os.path.join(os.path.dirname(__file__), "tools", "preflop_equity_pilot.py")
+    spec = importlib.util.spec_from_file_location("preflop_equity_pilot", path)
+    pilot = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pilot)
+    return pilot
+
+
+def test_suit_orbits_match_burnside_and_every_suit_perm():
+    """All 376992 holdings, all 24 suit permutations, one orbit count."""
+    pilot = _load_pilot()
+    assert pilot.canon_key([0, 1, 4, 8, 12]) == pilot.canon_key([1, 0, 5, 9, 13])
+    assert pilot.canon_key([0, 1, 4, 8, 12]) != pilot.canon_key([0, 1, 4, 8, 16])
+    info = pilot.verify_exhaustive()
+    assert info["orbits"] == 19998
+    assert (376992 + 6 * 16560 + 8 * 450) // 24 == 19998
+
+
+def test_dense_lookup_matches_omaha_score_on_random_deals():
+    pilot = _load_pilot()
+    bad, checked = pilot.parity_mismatches(n_deals=200, n_holes=3, seed=19)
+    assert checked == 600
+    assert bad == 0
+
+
+def test_equity_checkpoint_resume_matches_one_shot(tmp_path):
+    pilot = _load_pilot()
+    holes = np.array(
+        [
+            [0, 4, 8, 12, 16],
+            [1, 5, 9, 13, 17],
+            [2, 6, 10, 14, 18],
+            [3, 7, 11, 15, 20],
+        ],
+        dtype=np.int16,
+    )
+    ids = np.arange(holes.shape[0], dtype=np.int32)
+    one = tmp_path / "one.npz"
+    resumed = tmp_path / "resume.npz"
+    pilot.run_slice(ids, holes, n=96, stage=0, ckpt=one, batch=96)
+    pilot.run_slice(ids, holes, n=96, stage=0, ckpt=resumed, batch=32, max_new=2)
+    pilot.run_slice(ids, holes, n=96, stage=0, ckpt=resumed, batch=64)
+    a = np.load(one)
+    b = np.load(resumed)
+    assert np.array_equal(a["wins"], b["wins"])
+    assert np.array_equal(a["ties"], b["ties"])
+    assert bool(b["done"].all())
+
+
+def test_preflop_sources_stay_selectable_and_default_is_the_table():
+    """Proxy stays available. With AGENT_PREFLOP unset, a fresh process loads the table."""
+    import subprocess
+    import sys
+
+    proxy, proxy_name = agent._range_from_variant("proxy")
+    equity, equity_name = agent._range_from_variant("equity")
+    assert proxy_name == "shipped_proxy"
+    assert proxy is agent._PRE_PCT
+    assert equity_name == "equity_table"
+    assert equity.shape == (376992,)
+    assert equity is not proxy
+    assert not np.array_equal(equity, proxy)
+    root = os.path.dirname(os.path.abspath(__file__))
+    code = "import agent; print(agent.preflop_source()); print(agent._PREFLOP_VARIANT)"
+    base_env = os.environ.copy()
+    base_env.pop("AGENT_PREFLOP", None)
+    for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        base_env[key] = "1"
+    fresh = subprocess.run(
+        [sys.executable, "-c", code], cwd=root, env=base_env, capture_output=True, text=True, timeout=90
+    )
+    assert fresh.returncode == 0, fresh.stderr
+    assert fresh.stdout.splitlines() == ["equity_table", "equity"]
+    proxy_env = dict(base_env)
+    proxy_env["AGENT_PREFLOP"] = "proxy"
+    forced = subprocess.run(
+        [sys.executable, "-c", code], cwd=root, env=proxy_env, capture_output=True, text=True, timeout=90
+    )
+    assert forced.returncode == 0, forced.stderr
+    assert forced.stdout.splitlines() == ["shipped_proxy", "proxy"]
+
+
+def test_published_equity_table_is_suit_invariant_and_hashed():
+    """The equity percentile is indexed by _hand_idx and is constant on suit orbits."""
+    pct_path = agent._LOOKUP_DIR / "equity_pct.npy"
+    pct = np.load(pct_path)
+    assert pct.shape == (376992,)
+    assert pct.dtype == np.float32
+    a = int(agent._hand_idx(np.array([[0, 1, 4, 8, 12]], dtype=np.int64))[0])
+    b = int(agent._hand_idx(np.array([[1, 0, 5, 9, 13]], dtype=np.int64))[0])
+    assert pct[a] == pct[b]
+    pilot = _load_pilot()
+    combos = pilot.all_combos()
+    hidx = agent._hand_idx(combos.astype(np.int64))
+    assert int(np.count_nonzero(hidx != np.arange(hidx.shape[0]))) > 1000
+    mapped = np.sort(pilot.CARD_MAP[:, combos], axis=-1)
+    images = agent._hand_idx(mapped.reshape(-1, 5).astype(np.int64)).reshape(24, -1)
+    image_pct = pct[images]
+    assert np.all(image_pct == image_pct[0])
+    table = np.load(pilot.OUT / "equity_table.npz")
+    orbit = np.load(pilot.OUT / "orbit_map.npz")
+    means = table["mean"].astype(np.float64)
+    weighted = pilot.weighted_tie_percentile(means, orbit["counts"].astype(np.float64))
+    assert np.allclose(pct[hidx], weighted[orbit["holding_orbit"]].astype(np.float32))
+    loaded = agent._load_equity_tables()
+    assert np.array_equal(loaded[0], pct)
+    assert int(loaded[4].min()) == int(loaded[4].max()) == 38416
+    assert loaded[1].shape == (19998,)
+    stamps = (pct_path.stat().st_mtime_ns,)
+    agent._load_equity_tables()
+    assert pct_path.stat().st_mtime_ns == stamps[0]
+
+
+def test_tie_average_percentile_ignores_order_inside_a_tie():
+    pilot = _load_pilot()
+    values = np.array([0.1, 0.3, 0.3, 0.9])
+    pct = pilot.tie_average_percentile(values)
+    assert pct[1] == pct[2]
+    assert pct[0] < pct[1] < pct[3]
+    swapped = pilot.tie_average_percentile(np.array([0.3, 0.1, 0.9, 0.3]))
+    assert swapped[0] == swapped[3] == pct[1]
+
+
+def test_weighted_percentile_uses_multiplicity_not_suit_order():
+    """Equal means share one percentile. Orbit size, not row order, sets the rank."""
+    pilot = _load_pilot()
+    means = np.array([0.2, 0.2, 0.5])
+    counts = np.array([2.0, 4.0, 1.0])
+    pct = pilot.weighted_tie_percentile(means, counts)
+    assert pct[0] == pct[1] == 2.5 / 7.0
+    assert pct[2] == 6.0 / 7.0
+    flipped = pilot.weighted_tie_percentile(means[::-1], counts[::-1])
+    assert flipped[0] == pct[2]
+    assert flipped[1] == flipped[2] == pct[0]
+
+
+def test_progress_unique_worlds_do_not_double_count_final_stage(tmp_path, monkeypatch):
+    """The finished snapshot passes n_this=0. That must not add the last stage twice."""
+    import time
+
+    pilot = _load_pilot()
+    monkeypatch.setattr(pilot, "OUT", tmp_path)
+    monkeypatch.setattr(pilot, "N_ORBITS", 10)
+    monkeypatch.setattr(pilot, "STAGE_N", (4, 8, 16))
+    final = tmp_path / "chunks" / "s2"
+    final.mkdir(parents=True)
+    for wid, rows in ((0, 6), (1, 4)):
+        (final / f"w{wid:02d}.progress.json").write_text(
+            json.dumps({"done": rows, "rows": rows, "samples": rows * 8, "finished": True}),
+            encoding="utf-8",
+        )
+    snap = pilot._aggregate_progress(2, 2, 0, 16, time.perf_counter(), {"started_unix": time.time() - 5})
+    assert snap["samples_done"] == 160
+    assert snap["samples_target_full"] == 160
+    assert snap["percent_full"] == 100.0
+    assert snap["samples_stage_reported"] == 80
+    assert snap["samples_done"] != 10 * 16 + 80
+    mid = tmp_path / "chunks" / "s1"
+    mid.mkdir()
+    (mid / "w00.progress.json").write_text(
+        json.dumps({"done": 3, "rows": 10, "samples": 12}),
+        encoding="utf-8",
+    )
+    partial = pilot._aggregate_progress(1, 1, 4, 8, time.perf_counter(), {"started_unix": time.time() - 5})
+    assert partial["samples_done"] == 10 * 4 + 3 * 4
+
+
+def test_saved_equity_progress_counts_each_world_once():
+    pilot = _load_pilot()
+    payload = json.loads((pilot.OUT / "progress.json").read_text(encoding="utf-8"))
+    worlds = pilot.unique_completed_worlds(2, 19998, n_this=0)
+    assert worlds == 19998 * 38416
+    assert payload["samples_done"] == worlds
+    assert payload["percent_full"] == 100.0
+    assert payload["samples_stage_reported"] == 19998 * (38416 - 8192)
+
+
+def test_seed_cluster_interval_is_t_on_the_seed_means():
+    from review_harness import seed_cluster_summary
+
+    summary = seed_cluster_summary([1.0] * 10, [1.0] * 20)
+    assert summary["pooled_mean_bb_per_deal"] == 1.0
+    assert summary["seed_cluster_ci95"] == [1.0, 1.0]
+    assert summary["paired_deals"] == 20
+    assert summary["hands"] == 40
+
+
+def test_equity_manifest_rejects_a_bad_hash_and_version(tmp_path):
+    arrays = {
+        "equity_pct": np.zeros(4, dtype=np.float32),
+        "equity_mean": np.zeros(4, dtype=np.float64),
+        "equity_wins": np.zeros(4, dtype=np.int32),
+        "equity_ties": np.zeros(4, dtype=np.int32),
+        "equity_n": np.zeros(4, dtype=np.int32),
+    }
+    manifest = {"format": agent._EQUITY_FORMAT, "arrays": {}}
+    for name, arr in arrays.items():
+        path = tmp_path / f"{name}.npy"
+        with open(path, "wb") as handle:
+            np.save(handle, arr, allow_pickle=False)
+        manifest["arrays"][name] = {
+            "file": f"{name}.npy",
+            "dtype": str(arr.dtype),
+            "shape": list(arr.shape),
+            "nbytes": int(arr.nbytes),
+            "sha256": "0" * 64,
+        }
+    (tmp_path / "equity_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="sha256"):
+        agent._load_equity_tables(tmp_path)
+    manifest["format"] = "not-the-equity-table"
+    for name, arr in arrays.items():
+        manifest["arrays"][name]["sha256"] = agent._sha256_file(tmp_path / f"{name}.npy")
+    (tmp_path / "equity_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="equity format"):
+        agent._load_equity_tables(tmp_path)
+
+
 def test_shipped_lookup_matches_a_fresh_build_and_is_read_only(tmp_path):
     """Committed .npy bytes match _build_tables. Loading does not write."""
     built = agent._build_tables()
@@ -281,7 +501,7 @@ def test_extended_pool_percentiles_are_ranks_in_the_full_sample():
     assert pool["m"] == 60
     assert 1 not in pool["pct"]
     assert np.allclose(pool["pct"][0][:30], pre)
-    assert np.allclose(pool["pct"][0], agent._PRE_PCT[pool["hidx"]])
+    assert np.allclose(pool["pct"][0], agent._RANGE_PCT[pool["hidx"]])
     ranked = agent._street_pct(pool, 1)
     strength = agent._board_strength(pool["pidx"], pool["hidx"], pool["board"][:3])
     assert np.allclose(ranked, agent._percentile(strength))

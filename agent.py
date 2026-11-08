@@ -238,8 +238,8 @@ def _best(pidx: np.ndarray, tidx: np.ndarray) -> np.ndarray:
     return _TBL[idx].reshape(idx.shape[0], -1).max(axis=1)
 
 
-def _preflop_strength(holes: np.ndarray) -> np.ndarray:
-    """(N,5) holdings -> approximate preflop equity vs a random hand (N,)."""
+def _preflop_features(holes: np.ndarray) -> np.ndarray:
+    """(N,5) holdings -> the 16 proxy columns, including the intercept."""
     r = holes >> 2
     s = holes & 3
     cnt_r = (r[:, :, None] == _AR9).sum(1)
@@ -250,7 +250,7 @@ def _preflop_strength(holes: np.ndarray) -> np.ndarray:
     king_s = ((r == 7)[:, :, None] & (s[:, :, None] == _AR4)).any(1)
     wc = _POP[rmask[:, None] & _WINDOWS[None, :]]
     adj = (rmask & (rmask >> 1)) & 0xFF
-    f = np.stack([
+    return np.stack([
         r.sum(1) / 40.0,
         r.max(1) / 8.0,
         cnt_r[:, 8] / 2.0,
@@ -268,7 +268,11 @@ def _preflop_strength(holes: np.ndarray) -> np.ndarray:
         _POP[adj] / 4.0,
         np.ones(holes.shape[0]),
     ], axis=1)
-    return f @ _PRE_COEF
+
+
+def _preflop_strength(holes: np.ndarray) -> np.ndarray:
+    """(N,5) holdings -> approximate preflop equity vs a random hand (N,)."""
+    return _preflop_features(holes) @ _PRE_COEF
 
 
 if os.environ.get("AGENT_BUILD_TABLES") == "1":
@@ -276,6 +280,79 @@ if os.environ.get("AGENT_BUILD_TABLES") == "1":
     _TBL, _VAL, _PRE_PCT, _RMASK, _SCNT, _STRAIGHT_RANK = _build_tables()
 else:
     _TBL, _VAL, _PRE_PCT, _RMASK, _SCNT, _STRAIGHT_RANK = _load_lookup_tables()
+
+# Preflop range label. AGENT_PREFLOP selects it. "proxy" is the shipped
+# percentile of the frozen 16-coefficient formula. "equity" is the Monte Carlo
+# suit-orbit table (numeric .npy, hash-checked, no runtime generation).
+# Default is the equity table. Set AGENT_PREFLOP=proxy to keep the formula percentile.
+_EQUITY_FORMAT = "holey-donut-equity-v1"
+_EQUITY_NAMES = ("equity_pct", "equity_mean", "equity_wins", "equity_ties", "equity_n")
+_PREFLOP_DEFAULT = "equity"
+
+
+def _load_equity_tables(dest: Path | None = None):
+    """Load the opt-in equity table. Reject a bad version, shape, dtype, or hash."""
+    dest = _LOOKUP_DIR if dest is None else dest
+    manifest_path = dest / "equity_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("format") != _EQUITY_FORMAT:
+        raise RuntimeError(
+            f"equity format {manifest.get('format')!r} is not {_EQUITY_FORMAT}"
+        )
+    loaded = []
+    for name in _EQUITY_NAMES:
+        spec = manifest["arrays"][name]
+        path = dest / spec["file"]
+        digest = _sha256_file(path)
+        if digest != spec["sha256"]:
+            raise RuntimeError(f"{name} sha256 does not match the equity manifest")
+        arr = np.load(path, allow_pickle=False)
+        if str(arr.dtype) != spec["dtype"] or list(arr.shape) != list(spec["shape"]):
+            raise RuntimeError(
+                f"{name} is {arr.dtype} {list(arr.shape)}, equity manifest says "
+                f"{spec['dtype']} {spec['shape']}"
+            )
+        if int(arr.nbytes) != int(spec["nbytes"]):
+            raise RuntimeError(f"{name} nbytes do not match the equity manifest")
+        loaded.append(arr)
+    return loaded[0], loaded[1], loaded[2], loaded[3], loaded[4]
+
+
+def _range_from_variant(variant: str):
+    """Return (percentile array, source name). The two arrays are not aliases."""
+    if variant == "proxy":
+        return _PRE_PCT, "shipped_proxy"
+    if variant == "equity":
+        table = _load_equity_tables()[0]
+        if table.shape != _PRE_PCT.shape or table.dtype != _PRE_PCT.dtype:
+            raise RuntimeError(
+                f"equity percentile is {table.dtype} {table.shape}, "
+                f"proxy is {_PRE_PCT.dtype} {_PRE_PCT.shape}"
+            )
+        if table is _PRE_PCT:
+            raise RuntimeError("equity table is aliased to the proxy percentile")
+        return table, "equity_table"
+    raise RuntimeError(f"AGENT_PREFLOP {variant!r} is not 'proxy' or 'equity'")
+
+
+def use_preflop(variant: str) -> str:
+    """Bind the preflop percentile. Also sets AGENT_PREFLOP in this process."""
+    global _PREFLOP_VARIANT, _RANGE_PCT, _PREFLOP_SOURCE
+    pct, source = _range_from_variant(variant)
+    _RANGE_PCT = pct
+    _PREFLOP_SOURCE = source
+    _PREFLOP_VARIANT = variant
+    os.environ["AGENT_PREFLOP"] = variant
+    return source
+
+
+def preflop_source() -> str:
+    """'shipped_proxy' or 'equity_table'. This is the array _RANGE_PCT points at."""
+    return _PREFLOP_SOURCE
+
+
+_PREFLOP_VARIANT = os.environ.get("AGENT_PREFLOP", _PREFLOP_DEFAULT)
+_RANGE_PCT, _PREFLOP_SOURCE = _range_from_variant(_PREFLOP_VARIANT)
 
 
 def _board_strength(pidx: np.ndarray, hidx: np.ndarray, board: np.ndarray) -> np.ndarray:
@@ -351,7 +428,7 @@ def _make_pool(rng, hole, board, m: int) -> dict:
     hidx = _hand_idx(opp)
     pool = {"m": m, "draws": draws, "board": board_a, "my_pidx": _pair_idx(hole_a),
             "pidx": _pair_idx(opp), "hidx": hidx,
-            "pct": {0: _PRE_PCT[hidx].astype(np.float64)},
+            "pct": {0: _RANGE_PCT[hidx].astype(np.float64)},
             "win": np.full(m, np.nan)}
     if len(board) == 5:
         tidx = _triple_idx(board_a[None, :])
@@ -365,7 +442,8 @@ def _make_pool(rng, hole, board, m: int) -> dict:
 def _extend_pool(rng, pool: dict, hole, m: int) -> None:
     """Add m more candidates to a pool (same hole cards and board).
 
-    Preflop percentiles come from the global ``_PRE_PCT`` table, so they stay
+    Preflop percentiles come from ``_RANGE_PCT`` (the proxy, or the equity table
+    if AGENT_PREFLOP=equity), so they stay
     comparable when concatenated. Street percentiles are ranks inside one
     sample. They are dropped and recomputed on the combined pool the next
     time ``_street_pct`` is asked, instead of being concatenated batch-wise.
@@ -585,7 +663,7 @@ def _calibrate(memory: dict, result: HandResult, acts: list, hole) -> None:
     st = memory["stats"]
     opp = np.array(result.opp_hole, dtype=np.int64)
     board = np.array(result.board, dtype=np.int64)
-    pcts = {0: float(_PRE_PCT[_hand_idx(opp[None, :])[0]])}
+    pcts = {0: float(_RANGE_PCT[_hand_idx(opp[None, :])[0]])}
     for street, kind, _size in acts:
         if kind not in _SD_KINDS:
             continue
@@ -709,7 +787,7 @@ def _cheap_decide(obs: Observation) -> Action:
     legal = obs.legal_actions
     hole = np.array(obs.hole_cards, dtype=np.int64)
     if obs.street == 0:
-        pct = float(_PRE_PCT[_hand_idx(hole[None, :])[0]])
+        pct = float(_RANGE_PCT[_hand_idx(hole[None, :])[0]])
         if pct > 0.85 and Action.RAISE_POT in legal:
             return Action.RAISE_POT
         if obs.to_call == 0 or obs.to_call <= 2 * obs.big_blind or pct > 0.6:

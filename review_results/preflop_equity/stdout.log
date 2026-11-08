@@ -1,0 +1,7 @@
+STAGE_DONE target 1024 increment 1024 seconds 6.0
+
+STAGE_DONE target 8192 increment 7168 seconds 60.2
+
+STAGE_DONE target 38416 increment 30224 seconds 247.0
+
+DONE orbits 19998 n 38416

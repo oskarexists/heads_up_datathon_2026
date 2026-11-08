@@ -1,0 +1,40 @@
+{
+  "orbits": 1000,
+  "fresh_samples_per_orbit": 38416,
+  "table_samples_per_orbit": 38416,
+  "stage": 100,
+  "select_seed": 424242,
+  "select_stream": [
+    20261107,
+    424242,
+    100
+  ],
+  "world_stream": "SeedSequence([20261107, orbit_id, stage])",
+  "generation_stages": [
+    0,
+    1,
+    2
+  ],
+  "disjoint_from_generation": true,
+  "formula": "frozen _PRE_COEF dot _preflop_features; not refit",
+  "formula_suit_max_abs_gap": 0.0,
+  "fresh_means_are": "independent Monte Carlo estimates, not exact equity and not the table labels",
+  "multiplicity_weight": "orbit size among the sampled orbits",
+  "elapsed_seconds": 20.772129774093628,
+  "fresh_vs_table_rmse": 0.0035948591608195037,
+  "fresh_vs_table_mae": 0.0028907356309870896,
+  "fresh_vs_table_rmse_weighted": 0.0036242046067007055,
+  "fresh_vs_table_mae_weighted": 0.002923713683761184,
+  "formula_vs_fresh_rmse": 0.015275014707295207,
+  "formula_vs_fresh_mae": 0.011842833075107596,
+  "formula_vs_fresh_rmse_weighted": 0.014249251515018066,
+  "formula_vs_fresh_mae_weighted": 0.011212283807822292,
+  "formula_vs_table_rmse": 0.015254301328856051,
+  "formula_vs_table_mae": 0.011842547816187701,
+  "formula_vs_table_rmse_weighted": 0.014248310797370874,
+  "formula_vs_table_mae_weighted": 0.011250975316447673,
+  "noise_floor_rmse": 0.0034948440804587915,
+  "noise_floor_rmse_weighted": 0.003496773700130125,
+  "worst_case_se_one_mean": 0.002551020408163265,
+  "worst_case_se_difference": 0.0036076876591150386
+}

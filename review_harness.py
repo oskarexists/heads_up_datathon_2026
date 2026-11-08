@@ -234,6 +234,62 @@ def load_agent_module(path: str, name: str):
     return module
 
 
+def module_preflop_source(mod) -> str:
+    """Name the preflop percentile this module will actually read.
+
+    The 87fde9 snapshot has no switch. It always reads its own ``_PRE_PCT``.
+    A module that grew ``preflop_source`` reports that, after ``use_preflop``.
+    """
+    if hasattr(mod, "preflop_source"):
+        return str(mod.preflop_source())
+    pct = getattr(mod, "_RANGE_PCT", None)
+    shipped = getattr(mod, "_PRE_PCT", None)
+    if shipped is None:
+        return "unknown"
+    if pct is None or pct is shipped:
+        return "shipped_proxy"
+    return "unknown"
+
+
+# Student t, two-sided 95%, 9 degrees of freedom. Used for a 10-seed cluster.
+T_CRIT_95_DF9 = 2.2621571627409915
+
+
+def seed_cluster_summary(seed_means: list[float], paired_bb: list[float]) -> dict:
+    """Pooled judge interval and a t interval on the seed means."""
+    means = [float(x) for x in seed_means]
+    deals = [float(x) for x in paired_bb]
+    if len(means) < 2 or len(deals) < 2:
+        raise ValueError("need at least two seeds and two deals")
+    pooled = sum(deals) / len(deals)
+    pooled_se = statistics.stdev(deals) / math.sqrt(len(deals))
+    cluster_mean = sum(means) / len(means)
+    cluster_se = statistics.stdev(means) / math.sqrt(len(means))
+    tcrit = T_CRIT_95_DF9 if len(means) == 10 else None
+    return {
+        "seeds": len(means),
+        "paired_deals": len(deals),
+        "hands": len(deals) * 2,
+        "pooled_mean_bb_per_deal": pooled,
+        "pooled_iid_judge_se": pooled_se,
+        "pooled_iid_judge_ci95": [pooled - CHOP_Z * pooled_se, pooled + CHOP_Z * pooled_se],
+        "seed_means": means,
+        "seed_cluster_mean": cluster_mean,
+        "seed_cluster_se": cluster_se,
+        "seed_cluster_t_crit_95": tcrit,
+        "seed_cluster_ci95": (
+            None
+            if tcrit is None
+            else [cluster_mean - tcrit * cluster_se, cluster_mean + tcrit * cluster_se]
+        ),
+        "ci_note": (
+            "Pooled interval treats paired deals as iid and uses z=1.96. "
+            "Seed-cluster interval uses the 10 seed means and t with 9 df. "
+            "Neither is a proof of a win-rate gain when it contains 0."
+        ),
+    }
+
+
 def bench_rerank() -> dict:
     """Time one combined-pool street ranking versus ranking only the new half."""
     rng = np.random.default_rng(0)
@@ -273,6 +329,8 @@ def play_versus_module(baseline, match_seed: str, num_deals: int, hero_label: st
         vill_mem: dict = {}
         agent.new_half(AgentConfig(num_hands=num_deals), hero_mem)
         baseline.new_half(AgentConfig(num_hands=num_deals), vill_mem)
+        if hero_mem.get("bank") != 8.0 or vill_mem.get("bank") != 8.0:
+            raise RuntimeError(f"time bank is {hero_mem.get('bank')} / {vill_mem.get('bank')}, want 8")
         hero_mem["rng"] = np.random.default_rng(_seed_int(f"{match_seed}:{half}:{hero_label}"))
         vill_mem["rng"] = np.random.default_rng(_seed_int(f"{match_seed}:{half}:{baseline_label}"))
         nets = []
@@ -535,6 +593,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--baseline", default="", help="path to an unpatched agent.py; hero is the working tree")
     parser.add_argument("--hero-label", default="patched")
     parser.add_argument("--baseline-label", default="original")
+    parser.add_argument(
+        "--hero-preflop",
+        default="",
+        choices=["", "proxy", "equity"],
+        help="rebind this process's hero percentile before the match",
+    )
+    parser.add_argument("--expect-hero-source", default="", help="abort unless hero reports this source")
+    parser.add_argument("--expect-baseline-source", default="", help="abort unless the baseline reports this source")
     args = parser.parse_args(argv)
     opponents = [p.strip() for p in args.opponents.split(",") if p.strip()]
     unknown = [p for p in opponents if p not in ADVERSARIES]
@@ -546,7 +612,27 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.baseline:
+        if args.hero_preflop:
+            agent.use_preflop(args.hero_preflop)
         baseline = load_agent_module(args.baseline, "agent_original_review")
+        hero_source = module_preflop_source(agent)
+        baseline_source = module_preflop_source(baseline)
+        if args.expect_hero_source and hero_source != args.expect_hero_source:
+            print(
+                f"hero source {hero_source} != {args.expect_hero_source}",
+                file=sys.stderr,
+            )
+            return 2
+        if args.expect_baseline_source and baseline_source != args.expect_baseline_source:
+            print(
+                f"baseline source {baseline_source} != {args.expect_baseline_source}",
+                file=sys.stderr,
+            )
+            return 2
+        if hero_source == "equity_table" and baseline_source == "shipped_proxy":
+            if np.array_equal(agent._RANGE_PCT, baseline._PRE_PCT):
+                print("hero equity table is identical to the baseline proxy", file=sys.stderr)
+                return 2
         bench = bench_rerank()
         print(f"rerank extra {bench['extra_seconds_to_rerank_old_rows']*1e3:.3f} ms per 400->800 pool", flush=True)
         print(f"match {args.hero_label} vs {args.baseline_label}", flush=True)
@@ -564,7 +650,15 @@ def main(argv: list[str] | None = None) -> int:
             "patched_vs_original": versus["summary"],
             "patched_vs_opponents": patched_field["opponents"],
             "original_vs_opponents": original_field["opponents"],
-            "check_build": "unfinished/terminated, not a pass. Prior base-image build was terminated after stalling; this chunk did not restart Docker.",
+            "hero_preflop_source": hero_source,
+            "baseline_preflop_source": baseline_source,
+            "time_bank_seconds": 8.0,
+            "fresh_memory_each_half": True,
+            "check_build": (
+                "not measured by this harness. An earlier base-image build was "
+                "terminated while the base image was still uncached. That note is "
+                "history, not the result of this match."
+            ),
         }
         (out_dir / "patch_comparison.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         def _write_rows(path, rows, fields):
