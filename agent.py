@@ -62,10 +62,13 @@ AGENT_NAME = "Holey Donut"
 # * Time: the number of samples adapts to the time bank; every decision is
 #   wrapped so that a bug can never produce an illegal action.
 
+import hashlib
+import json
 import math
 import sys
 import time
 from itertools import chain, combinations
+from pathlib import Path
 
 import numpy as np
 
@@ -143,6 +146,73 @@ def _build_tables():
     return tbl, val, pre_pct, rmask, scnt, straight_rank
 
 
+# Shipped lookup files. Startup reads them. It does not rebuild them.
+# Regenerate with tools/generate_lookup_tables.py (AGENT_BUILD_TABLES=1).
+_LOOKUP_FORMAT = "holey-donut-lookup-v1"
+_LOOKUP_DIR = Path(__file__).resolve().parent / "lookup_tables"
+_LOOKUP_NAMES = ("tbl", "val", "pre_pct", "rmask", "scnt", "straight_rank")
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_lookup_tables(built, dest: Path | None = None) -> dict:
+    """Write numeric .npy files and a JSON manifest. No pickle."""
+    dest = _LOOKUP_DIR if dest is None else dest
+    dest.mkdir(parents=True, exist_ok=True)
+    arrays = list(built[:5]) + [np.asarray([int(built[5])], dtype=np.int64)]
+    manifest = {"format": _LOOKUP_FORMAT, "arrays": {}}
+    for name, arr in zip(_LOOKUP_NAMES, arrays):
+        arr = np.ascontiguousarray(arr)
+        path = dest / f"{name}.npy"
+        with open(path, "wb") as handle:
+            np.save(handle, arr, allow_pickle=False)
+        manifest["arrays"][name] = {
+            "file": f"{name}.npy",
+            "dtype": str(arr.dtype),
+            "shape": list(arr.shape),
+            "nbytes": int(arr.nbytes),
+            "sha256": _sha256_file(path),
+        }
+    (dest / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return manifest
+
+
+def _load_lookup_tables(dest: Path | None = None):
+    """Load the shipped tables. Reject a bad version, shape, dtype, or hash."""
+    dest = _LOOKUP_DIR if dest is None else dest
+    manifest_path = dest / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("format") != _LOOKUP_FORMAT:
+        raise RuntimeError(
+            f"lookup format {manifest.get('format')!r} is not {_LOOKUP_FORMAT}"
+        )
+    loaded = []
+    for name in _LOOKUP_NAMES:
+        spec = manifest["arrays"][name]
+        path = dest / spec["file"]
+        digest = _sha256_file(path)
+        if digest != spec["sha256"]:
+            raise RuntimeError(f"{name} sha256 does not match the manifest")
+        arr = np.load(path, allow_pickle=False)
+        if str(arr.dtype) != spec["dtype"] or list(arr.shape) != list(spec["shape"]):
+            raise RuntimeError(
+                f"{name} is {arr.dtype} {list(arr.shape)}, manifest says "
+                f"{spec['dtype']} {spec['shape']}"
+            )
+        if int(arr.nbytes) != int(spec["nbytes"]):
+            raise RuntimeError(f"{name} nbytes do not match the manifest")
+        loaded.append(arr)
+    return loaded[0], loaded[1], loaded[2], loaded[3], loaded[4], int(loaded[5].reshape(-1)[0])
+
+
 def _pair_idx(cards: np.ndarray) -> np.ndarray:
     """(..., 5) hole cards -> (..., 10) indices of the 10 two-card combinations."""
     a = cards[..., _PAIRS[:, 0]]
@@ -201,7 +271,11 @@ def _preflop_strength(holes: np.ndarray) -> np.ndarray:
     return f @ _PRE_COEF
 
 
-_TBL, _VAL, _PRE_PCT, _RMASK, _SCNT, _STRAIGHT_RANK = _build_tables()
+if os.environ.get("AGENT_BUILD_TABLES") == "1":
+    # Explicit generator path only. A normal start never sets this.
+    _TBL, _VAL, _PRE_PCT, _RMASK, _SCNT, _STRAIGHT_RANK = _build_tables()
+else:
+    _TBL, _VAL, _PRE_PCT, _RMASK, _SCNT, _STRAIGHT_RANK = _load_lookup_tables()
 
 
 def _board_strength(pidx: np.ndarray, hidx: np.ndarray, board: np.ndarray) -> np.ndarray:

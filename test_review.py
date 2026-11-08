@@ -57,6 +57,52 @@ def test_short_deck_ranking_rules():
     assert wheel < six_high
 
 
+def test_shipped_lookup_matches_a_fresh_build_and_is_read_only(tmp_path):
+    """Committed .npy bytes match _build_tables. Loading does not write."""
+    built = agent._build_tables()
+    loaded = (
+        agent._TBL,
+        agent._VAL,
+        agent._PRE_PCT,
+        agent._RMASK,
+        agent._SCNT,
+        agent._STRAIGHT_RANK,
+    )
+    for got, exp in zip(loaded[:5], built[:5]):
+        assert got.dtype == exp.dtype
+        assert got.shape == exp.shape
+        assert np.array_equal(got, exp)
+    assert int(loaded[5]) == int(built[5])
+    stamps = sorted((p.name, p.stat().st_mtime_ns) for p in agent._LOOKUP_DIR.iterdir())
+    agent._load_lookup_tables()
+    again = sorted((p.name, p.stat().st_mtime_ns) for p in agent._LOOKUP_DIR.iterdir())
+    assert again == stamps
+
+    for name in agent._LOOKUP_NAMES:
+        arr = np.arange(4, dtype=np.int64)
+        path = tmp_path / f"{name}.npy"
+        with open(path, "wb") as handle:
+            np.save(handle, arr, allow_pickle=False)
+    manifest = {
+        "format": agent._LOOKUP_FORMAT,
+        "arrays": {
+            name: {
+                "file": f"{name}.npy",
+                "dtype": "int64",
+                "shape": [4],
+                "nbytes": 32,
+                "sha256": agent._sha256_file(tmp_path / f"{name}.npy"),
+            }
+            for name in agent._LOOKUP_NAMES
+        },
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    raw = (tmp_path / "tbl.npy").read_bytes()
+    (tmp_path / "tbl.npy").write_bytes(raw[:-1] + bytes([raw[-1] ^ 0xFF]))
+    with pytest.raises(RuntimeError, match="sha256"):
+        agent._load_lookup_tables(tmp_path)
+
+
 def test_agent_rank_table_matches_omaha_score_order():
     rng = np.random.default_rng(7)
     for _ in range(40):
