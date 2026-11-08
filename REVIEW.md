@@ -155,9 +155,17 @@ The 21 tests are the starter `test_agent.py` suite (legal actions over hundreds 
 
 ## `tools/check_build.sh`
 
-Docker is installed and `docker info` succeeded. There is no cached `poker-agent-base` image. `./tools/check_build.sh` was started and got as far as `docker build` of `docker/Dockerfile.base`. The log `/tmp/poker-check-build-20261107.log` stopped printing once pip began `torch` from `https://download.pytorch.org/whl/cpu` (wheel listed as 209.5 MB). The build process was still alive, at low CPU, more than 15 minutes later. Buildkit was not writing further log lines (stdout is not a TTY).
+Docker is installed and `docker info` succeeded. There was no cached `poker-agent-base` image, so `./tools/check_build.sh` built `docker/Dockerfile.base` from scratch. Pip did install CPU `torch==2.15.0+cpu` (209.5 MB wheel, about 126 kB/s). While BuildKit was exporting the finished base layers, Docker stopped the build:
 
-At the time of this report the build had been running for 17 minutes and was still inside that `pip install torch`. No later step was printed. **`check_build` did not finish and is not a pass.** The smoke test (15s startup, sample hands, 1s actions, read-only container) was not run. The HTTP timing above is the substitute, and it is weaker than `check_build.sh`.
+```text
+#12 exporting layers 8.9s done
+#12 CANCELED
+ERROR: failed to build: failed to solve: Canceled: context canceled
+CHECK FAILED: the base image did not build (this is not your bot's fault; tell the organizers)
+EXIT:1
+```
+
+Log: `/tmp/poker-check-build-20261107.log`. The script's own message says the failure is the base image, not the bot. The agent image was never built, and the in-container smoke test never ran. **`check_build` is not a pass.** The HTTP timing above is the substitute, and it does not apply the match's read-only filesystem or the image's CPU/memory caps.
 
 ## Sample limits
 
