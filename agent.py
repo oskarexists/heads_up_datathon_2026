@@ -63,6 +63,7 @@ AGENT_NAME = "Holey Donut"
 #   wrapped so that a bug can never produce an illegal action.
 
 import math
+import sys
 import time
 from itertools import chain, combinations
 
@@ -225,12 +226,17 @@ def _board_strength(pidx: np.ndarray, hidx: np.ndarray, board: np.ndarray) -> np
         bmask |= 1 << (x >> 2)
     hole_mask = _RMASK[hidx][:, None]
     windows = _WINDOWS[None, :]
+    board_mask = np.int64(bmask)
     hw = _POP[hole_mask & windows]
+    bw = _POP[board_mask & windows]
     # Union count: a rank on both the holding and the board is one rank, not two.
-    union = _POP[(hole_mask | np.int64(bmask)) & windows]
-    # Two distinct hole ranks, and four or five distinct ranks in the window
-    # between those hole ranks and the board. Union of three is a backdoor.
-    straight_draw = ((hw >= 2) & (union >= 4)).any(1) & (made < _STRAIGHT_RANK)
+    union = _POP[(hole_mask | board_mask) & windows]
+    # A one-card straight draw needs two hole ranks and two board ranks already
+    # in the window, with at least four distinct ranks between them. Three or
+    # more hole ranks plus fewer than two board ranks can reach union 4 and
+    # still have no 2-hole + 3-board straight (6c7d8h9s6d on Ac Kd Qh Ks).
+    # Union 3 is a two-card backdoor and gets no bonus.
+    straight_draw = ((hw >= 2) & (bw >= 2) & (union >= 4)).any(1) & (made < _STRAIGHT_RANK)
     scale = 1.0 if k == 3 else 0.6
     return val + scale * (1.3 * flush_draw + 0.8 * straight_draw)
 
@@ -668,6 +674,26 @@ _P = {
 }
 
 
+def _raise_errors() -> bool:
+    """Dev/tests set AGENT_RAISE_ERRORS=1. The tournament leaves it unset."""
+    return os.environ.get("AGENT_RAISE_ERRORS") == "1"
+
+
+def _record_failure(memory: dict, where: str) -> None:
+    """Count a failure, then re-raise in dev or log a traceback on stderr.
+
+    The traceback is not put into the action JSON. ``choose_action`` still
+    returns a legal action when this does not re-raise. Nothing from the
+    environment is written.
+    """
+    counts = memory.setdefault("errors", {"choose_action": 0, "on_hand_end": 0})
+    counts[where] = int(counts.get(where, 0)) + 1
+    if _raise_errors():
+        raise
+    print(f"agent {where} failed", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
+
+
 def _equity_when_called(e: float, f: float, street: int) -> float:
     """Our equity against the part of the range that continues after a bet."""
     f = min(f, 0.9)
@@ -685,9 +711,15 @@ def _decide(obs: Observation, memory: dict) -> Action:
         cur.update({"hand_index": obs.hand_index, "hist_n": 0, "pools": {}, "my_last": None})
         _new_hand_accounting(memory)
     if _FIXED_SCALE is None and _spent(memory) > 0.96 * memory["bank"]:
+        # Still parse history. Skipping _replay and jumping hist_n drops
+        # opponent actions forever, because later calls only count i >= hist_n.
+        acts = _replay(obs, memory)
         best = _cheap_decide(obs)
+        if best not in obs.legal_actions:
+            best = Action.CHECK_CALL if obs.to_call == 0 else Action.FOLD
         cur["my_last"] = (street, best, obs.to_call, obs.is_button, "s")
-        cur["hist_n"] = len(obs.action_history)
+        cur["acts"] = acts
+        cur["hole"] = obs.hole_cards
         return best
     acts = _replay(obs, memory)
 
@@ -805,6 +837,7 @@ def new_half(config: AgentConfig, memory: dict) -> None:
     memory["rng"] = np.random.default_rng()
     memory["stats"] = _fresh_stats()
     memory["cur"] = {"hand_index": -1, "hist_n": 0, "pools": {}, "my_last": None}
+    memory["errors"] = {"choose_action": 0, "on_hand_end": 0}
 
 
 def choose_action(obs: Observation, memory: dict) -> Action:
@@ -839,6 +872,7 @@ def choose_action(obs: Observation, memory: dict) -> Action:
         action = _decide(obs, memory)
     except Exception:
         action = None
+        _record_failure(memory, "choose_action")
     finally:
         memory["time_used"] = memory.get("time_used", 0.0) + (time.perf_counter() - t0)
         memory["calls"] = memory.get("calls", 0) + 1
@@ -874,8 +908,11 @@ def on_hand_end(result: HandResult, memory: dict) -> None:
                 if result.winner == "me" and my_aggr:
                     _count(st, street, "fold", size)    # opponent folded to my bet
             elif my_aggr:
-                _count(st, street, "call", size)        # opponent called my last bet
-                acts.append((street, "call", size))
+                # Postflop "call" updates fold/raise tables that have no street 0.
+                # A preflop all-in that is called uses the preflop call counters.
+                kind = "call_raise" if street == 0 else "call"
+                _count(st, street, kind, size)
+                acts.append((street, kind, size))
             elif action == Action.CHECK_CALL and to_call_then == 0 and street == 3 and not was_button:
                 _count(st, street, "check")             # opponent checked back the river
             if result.went_to_showdown and result.opp_hole is not None and _P["sd_weight"][3] > 0:
@@ -884,7 +921,7 @@ def on_hand_end(result: HandResult, memory: dict) -> None:
             if result.winner == "me" and not result.went_to_showdown:
                 _count(st, 0, "open_pass")              # opponent open-folded the button
     except Exception:
-        pass
+        _record_failure(memory, "on_hand_end")
     finally:
         memory["time_used"] = memory.get("time_used", 0.0) + (time.perf_counter() - t0)
 

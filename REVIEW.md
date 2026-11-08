@@ -50,7 +50,9 @@ Unpatched `agent.py:222-223` flags a straight draw when `min(hole_ranks_in_windo
 
 The sum also double-counts a rank that is on both the hole cards and the board.
 
-**Patched.** The bonus now requires two distinct hole ranks in the window and a union of hole-rank mask and board-rank mask of at least 4. A shared rank counts once. A union of 3 is a backdoor and gets no bonus. The made-hand gate (`made < _STRAIGHT_RANK`) is unchanged. The same test locks a double-counted 9-8 overlap at bonus 0 and a real four-rank draw at 0.8.
+**Patched, then corrected.** The first patch required two distinct hole ranks and a union of at least 4, and stopped double-counting a shared rank. That rule is not enough. Hole `6c 7d 8h 9s 6d` on the turn `Ac Kd Qh Ks` has four hole ranks in 6-T and those ranks plus the ace in the wheel, so `hw >= 2` and `union >= 4` fired. The turn scale is 0.6, so the bonus was `0.48` (`_board_strength` 3.087 versus made `_VAL` 2.607). An exhaustive check of all 27 remaining rivers and every 2-hole + 3-board subset finds no straight and no straight flush. Three hole ranks and fewer than two board ranks cannot supply the three board cards a straight needs.
+
+The rule now also requires at least two distinct board ranks in that same window. Union 3 stays a backdoor with no bonus. The made-hand gate is unchanged. `test_straight_draw_requires_two_board_ranks_in_the_window` locks the reported hand at bonus 0 and zero straight outs, and locks a real turn draw (two board ranks, four-rank union, not yet a straight) at `0.48`. The flop double-count case is still bonus 0 and the real flop draw is still 0.8. The head-to-head in `review_results/patch_campaign/` is the first patch only. It does not measure this correction. The later section does.
 
 ### 3. Confirmed: extended pools keep batch-local percentiles
 
@@ -62,7 +64,17 @@ This runs when the weighted range is narrower than the target. Against an oppone
 
 **Patched.** Concatenation keeps `draws`, `pidx`, `hidx`, `win`, and the global preflop percentile. Street percentile keys are dropped. The next `_street_pct` ranks the combined pool. `test_extended_pool_percentiles_are_ranks_in_the_full_sample` asserts that. The rerank cost is in the patch section below.
 
-### 4. Confirmed behavior, low tournament risk: exceptions never reach the judge
+### 3b. Confirmed, and fixed: the cheap path dropped opponent actions
+
+Independent audit of `5571729` (`../independent-final.log`): if `_spent` is over 96% of the bank, `_decide` used to set `hist_n` to the end of the history and return before `_replay`. Later decisions only count `i >= hist_n`, so those opponent actions never entered `stats`. This runs only after the bot has already switched to `_cheap_decide`. It does not itself return an illegal action. `choose_action` still falls back to check, or fold if chips are owed.
+
+**Patched.** The cheap path now calls `_replay` before `_cheap_decide`, so each new opponent action is counted once. A later call, including one that has left the cheap path, does not count it again. `test_emergency_path_counts_opponent_actions_once` forces `time_used` to 97% of the bank, checks an opening raise is stored as one `pre_open` observation, and checks the count stays 1.
+
+### 4. Exceptions stay off the action JSON, and they are now counted
+
+Tournament default (`AGENT_RAISE_ERRORS` unset): `choose_action` and `on_hand_end` log `traceback.print_exc` to stderr, increment `memory["errors"]`, and still return a legal action (check, or fold if facing a bet) or finish the hand-end call. Dev and tests set `AGENT_RAISE_ERRORS=1` to re-raise after the counter increments. `new_half` resets both counters. The stderr line does not dump the environment. A successful `/act` body stays `{"action": ..., "hand_end_errors": []}` with no traceback. Tests: `test_failures_log_or_reraise_and_reset_each_half`, `test_action_json_has_no_traceback_when_decide_fails`.
+
+### 4b. Confirmed behavior, low tournament risk: the judge still does not see a raised error by default
 
 `choose_action` (the `try` around `_decide`) turns any exception into check, or fold if facing a bet. `on_hand_end` swallows its own exceptions, so a learning bug does not increment the judge's error counter. Five real errors forfeit the half, so the wrapper is deliberate. After the ranker patch those handlers are `agent.py:838` and `agent.py:886`.
 
@@ -161,6 +173,31 @@ Script matches, same seed, hero named in the row. These probes and the four earl
 
 Every one of those fourteen intervals is entirely above 0, so each script match would be a hero win under `decide_verdict`. The gaps between patched and original on a given script are a few tenths of a bb/deal and the hero RNGs differ, so those gaps are not a paired effect. Raw rows: `review_results/patch_campaign/patched_vs_original.csv`, `patched_vs_probes.csv`, `original_vs_probes.csv`. Aggregates: `review_results/patch_campaign/patch_comparison.json`.
 
+Those rows are the first draw patch (`hw >= 2` and `union >= 4`, no board-rank minimum). Do not read them as the result of the two-board-rank correction.
+
+## Straight-fix versus the original
+
+The corrected straight rule, the cheap-path history parse, the preflop showdown-call fix, and the error counters are in this tree. Baseline is still `git show 5571729:agent.py`. Same paired formula, `n = 1000`, fresh `new_half` memory, seeded RNG. Hero label `straightfix`, so this is not the same RNG stream as the table above. Positive means the corrected bot gained across both seats. Raw files are under `review_results/straight_fix_campaign/` and do not replace `patch_campaign/`.
+
+A first run of this command was discarded and not kept. Called preflop all-ins reached `on_hand_end` with street 0, `_count(..., "call", ...)` indexed a postflop table, and the traceback aborted the rest of that hand's update. Those hands are now recorded as `call_raise`. The rerun log has zero `agent on_hand_end failed` lines and zero `agent choose_action failed` lines.
+
+```bash
+OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
+  taskset -c 0 /tmp/poker-venv-review/bin/python -u review_harness.py \
+  --deals 1000 --seed review-straightfix-20261107 \
+  --baseline /tmp/agent_original_5571729.py \
+  --hero-label straightfix --baseline-label original \
+  --opponents "" --out review_results/straight_fix_campaign
+```
+
+CI recomputed from `patched_vs_original.csv` with `statistics.stdev` (`ddof=1`) and `1.96 * SE`. It matches the JSON. Chip sum `(21 + 1182) / 2 / 1000 = 0.6015`. Illegal actions: 0. Decide exceptions: 0. Wall 14.8s.
+
+| Matchup | Mean bb/deal | SD | SE | 95% CI | Chips half1, half2 | Interval includes 0 |
+|---|---:|---:|---:|---|---:|---|
+| straight-fix vs original `5571729` | +0.6015 | 14.231 | 0.450 | [-0.281, +1.484] | +21, +1182 | yes |
+
+`decide_verdict` would call this a chop. **This is not a demonstrated win-rate improvement.** The first patch's chop and this chop are different seeds and different code. Script probes were not re-run after the two-board-rank correction. Offline pair-by-triple files and the preflop orbit table were not built in this chunk.
+
 ## Time bank (one CPU, real HTTP)
 
 `review_harness.py --http-half 1000` started a cold `agent.py` under `taskset -c 0` on port 5918, waited for `GET /`, then played 1000 deals with the hero in seat 0 against an in-process calling station. Finished hands were queued and posted with the next `/act`, then `/hand-end`, which is the judge's pattern. The opponent was not on HTTP, so opponent think time is not in these numbers.
@@ -190,15 +227,15 @@ OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
   taskset -c 0 /tmp/poker-venv-review/bin/python -m pytest -q
 ```
 
-Result after the ranker patch, on CPU 1 while the match used CPU 0:
+Result after the straight-draw correction, the cheap-path history fix, and the preflop showdown-call fix:
 
 ```text
-21 passed, 1 warning in 17.81s
+26 passed, 1 warning in 17.63s
 ```
 
-The warning is Starlette's deprecation notice inside FastAPI's `TestClient` (`httpx` vs `httpx2`). It is not from the bot. An earlier unpatched run of the same suite was 21 passed in 21.2s.
+The warning is Starlette's deprecation notice inside FastAPI's `TestClient` (`httpx` vs `httpx2`). It is not from the bot. The unpatched suite was 21 passed. The five additions are the corrected draw tests' replacement coverage, the emergency-path count, loud errors, action JSON, and the preflop showdown call.
 
-The 21 tests are the starter `test_agent.py` suite (legal actions over hundreds of hands, both seats, aggressive opponent, memory reset, token, malformed body, crash reporting, `PORT`) plus `test_review.py`. The two ranker tests now assert the corrected bonuses and the full-pool percentile. They no longer assert the defects. Adversary legality covers the three new probes.
+The 26 tests are the starter `test_agent.py` suite (legal actions over hundreds of hands, both seats, aggressive opponent, memory reset, token, malformed body, crash reporting, `PORT`) plus `test_review.py`. The ranker tests assert the corrected bonuses, including two board ranks for a straight draw, and the full-pool percentile. They no longer assert the defects. Adversary legality covers the three probes.
 
 ## `tools/check_build.sh`
 
@@ -212,7 +249,7 @@ CHECK FAILED: the base image did not build (this is not your bot's fault; tell t
 EXIT:1
 ```
 
-Log: `/tmp/poker-check-build-20261107.log`. The script's own message says the failure is the base image, not the bot. The agent image was never built, and the in-container smoke test never ran. The build was safely terminated after stalling for more than 19 minutes. Status: **unfinished/terminated, not a pass.** This continuation did not restart Docker. The HTTP timing above is the substitute, and it does not apply the match's read-only filesystem or the image's CPU/memory caps.
+Log: `/tmp/poker-check-build-20261107.log`. The script's own message says the failure is the base image, not the bot. The agent image was never built, and the in-container smoke test never ran. The coordinator intentionally canceled that build after it had stalled for more than 19 minutes. The log line `Canceled: context canceled` is that cancellation, not a spontaneous defect found in the bot or in Docker's layer export. Status: **unfinished/terminated, not a pass.** This chunk did not start another build. The HTTP timing above is the substitute, and it does not apply the match's read-only filesystem or the image's CPU/memory caps.
 
 ## Sample limits
 
@@ -228,9 +265,9 @@ Log: `/tmp/poker-check-build-20261107.log`. The script's own message says the fa
 
 Line numbers are the patched `agent.py`. Constants that the patch did not touch match `5571729`.
 
-Import builds a dense pair-by-triple rank table from `evaluator.get_table()` (`_build_tables`) and a 16-coefficient linear preflop proxy. `_PRE_COEF` (`agent.py:89-90`) is applied in `_preflop_strength` (`agent.py:170-200`). The comment in source says it was fitted offline to Monte Carlo equity with R^2 = 0.89. That R^2 was not remeasured here. The sixteen features, in order, are: rank sum / 40, max rank / 8, ace count / 2, pair count / 2, highest pair rank, a trips flag, number of suits with at least two cards / 2, a three-suited flag, an ace-suited flag, a king-suited flag, the fullest straight window / 5, count of windows with at least 3 ranks / 6, count with at least 4 / 6, distinct ranks / 5, adjacent-rank popcount / 4, and an intercept. `_PRE_PCT` is that score's percentile over every 5-card holding. It has no board and no opponent hand, so it cannot see blockers or domination. It is the only preflop strength number the range model uses.
+Import builds a dense pair-by-triple rank table from `evaluator.get_table()` (`_build_tables`) and a 16-coefficient linear preflop proxy. `_PRE_COEF` (`agent.py:89-90`) is applied in `_preflop_strength` (`agent.py:170-200`). The comment in source says it was fitted offline to Monte Carlo equity with R^2 = 0.89. That R^2 was not remeasured here. The sixteen features, in order, are: rank sum / 40, max rank / 8, ace count / 2, pair count / 2, highest pair rank, a trips flag, number of suits with at least two cards / 2, a three-suited flag, an ace-suited flag, a king-suited flag, the fullest straight window / 5, count of windows with at least 3 ranks / 6, count with at least 4 / 6, distinct ranks / 5, adjacent-rank popcount / 4, and an intercept. `_PRE_PCT` is that score's percentile over every 5-card holding. The number depends only on those five cards. It is not conditioned on a specific opponent combo, so two hands with the same counts share a percentile even when they block different nut suits. That is a limit of the scalar, not of the sampler. `_make_pool` removes the hero's cards and the board from the deck before it draws an opponent holding, so the Monte Carlo does apply that card removal. The weight on a sampled hand is still `_PRE_PCT` of the opponent's five cards, or `_board_strength` of that holding plus the board. Removing dead cards and pricing suit blockers against a continuing range are different things.
 
-Postflop, `_make_pool` (`agent.py:253`) draws opponent holdings and a private run-out from a fixed permutation table (`_PERM_POOL`, seed `12345 + deck size`). `_board_strength` (`agent.py:206-235`) ranks those holdings by the made Omaha category plus, before the river, 1.3 for a flush draw and 0.8 for a straight draw, scaled by 1.0 on the flop and 0.6 on the turn. That rank is turned into a within-sample percentile by `_percentile` / `_street_pct`. It is not the showdown score. Showdown equity is a separate Monte Carlo: `_fill_wins` deals the stored run-out and compares `_best` for hero and opponent.
+Postflop, `_make_pool` draws opponent holdings from the cards that are not in the hero's hand or on the board, plus a private run-out, from a fixed permutation table (`_PERM_POOL`, seed `12345 + deck size`). `_board_strength` ranks those holdings by the made Omaha category plus, before the river, 1.3 for a flush draw and 0.8 for a straight draw. A straight draw also needs two distinct board ranks in the window. The scale is 1.0 on the flop and 0.6 on the turn. That rank is turned into a within-sample percentile by `_percentile` / `_street_pct`. It is not the showdown score. Showdown equity is a separate Monte Carlo: `_fill_wins` deals the stored run-out and compares `_best` for hero and opponent.
 
 `_range_weights` (`agent.py:533-547`) multiplies a soft top-percentile weight (`_top`) for bets, raises, and calls, and a soft cap (`_cap`) for checks. The cutoff `x` comes from `_x_for` (`agent.py:411-433`): the observed frequency of that action, with a floor (0.15 / 0.08 / 0.20 depending on the action), then a shrink toward showdown calibration. Frequency is a Beta-style average with the priors in `_PRIORS` (`agent.py:327-328`): 6 pseudo-hands preflop (`_f_pre`) and a street count shrunk toward 8 pseudo-hands of the pooled postflop rate (`_f_post`). Counters decay by `_P["decay"] = 0.995` each hand (`_decay_stats`).
 
@@ -257,11 +294,11 @@ The patch does not change any of those constants. It only changes which holdings
 
 These are arguments against the choices above. Each one says what a strong opponent can do, what is source evidence, what is still a hypothesis, and how to test it. The ranker patch does not answer them. Wins against the four scripts in the first table are not evidence that the design is sound.
 
-### A scalar preflop proxy drops interactions and blockers
+### A scalar preflop proxy drops hand-class interactions
 
-A strong opponent keeps hand classes (double-suited rundowns, suited aces with a dangler, pair plus suit) and removes combos that hero's cards block. This proxy assigns one number from rank counts, suit counts, and straight-window occupancy. Two holdings with the same counts and the same window popcount get the same percentile even when they block different nut suits. There is no term for a specific opponent combo.
+A strong opponent keeps hand classes (double-suited rundowns, suited aces with a dangler, pair plus suit) and changes the continuing range when hero's cards block a nut suit. This proxy assigns one number from rank counts, suit counts, and straight-window occupancy. Two holdings with the same counts and the same window popcount get the same `_PRE_PCT` even when their suits block different boards. There is no term for a specific opponent combo. The sampler is separate: opponent hands are drawn from the cards hero does not hold (`_make_pool`, `known = hole | board`). Do not describe the bot as having no card removal.
 
-Evidence: the feature list and `_PRE_COEF` are the whole preflop model (`agent.py:89-90`, `170-200`). The R^2 = 0.89 comment, if taken at face value, already says about 11% of equity variance is missing, and R^2 against a uniform random hand does not measure order against a tight continuing range. That second gap is a hypothesis. The calling-station win does not speak to it, because a station does not fold blockers.
+Evidence: the feature list and `_PRE_COEF` are the whole preflop strength label (`agent.py` `_preflop_strength`). The R^2 = 0.89 comment, if taken at face value, already says about 11% of equity variance versus a random hand is missing, and that fit does not measure order against a tight continuing range. That second gap is a hypothesis. The calling-station win does not speak to it. A station does not fold when a suit is blocked.
 
 Test: rank all `C(36,5)` holdings by `_PRE_PCT` and by enumerated equity versus a uniform hand and versus the top 20% of `_PRE_PCT`. Report pairwise inversions and the equity gap between holdings that share a percentile but differ by one suit. A replacement worth trying is a class table or a small equity lookup, still computed at import, keyed by the sorted rank-and-suit pattern.
 
@@ -269,7 +306,7 @@ Test: rank all `C(36,5)` holdings by `_PRE_PCT` and by enumerated equity versus 
 
 `_x_for` sets `x` from how often the action happens, then `_top` keeps a prefix of the same strength percentile. A check applies `_cap`, which downweights that same prefix. The continuing range is always an upper segment of one scalar, plus a floor of 0.04 so weak hands never quite die.
 
-A strong opponent's continuing range is not that prefix. On a monotone flop the call is nut flushes, flush draws, and a few blockers, and it folds high full houses that are still high on a made-hand scale. A polar pot-raise is the nuts and air, with a gap in the middle. A prefix model prices the air as if it were the hands just below the value cutoff, or, when `x` is large, prices the air as if it were inside the top.
+A strong opponent's continuing range is not that prefix. A polar pot-raise is the nuts and air, with a gap in the middle. A prefix model prices the air as if it were the hands just below the value cutoff, or, when `x` is large, prices the air as if it were inside the top. Examples that can actually occur: on a monotone flop the three board cards are three distinct ranks, so no 2+3 full house exists. The split is trips (a pair in the hole matching a board rank) versus a flush draw that is only a pair or high card plus the 1.3 bonus. On the turn, three of one suit plus a paired side card can make a full house, and a flush is made only when the hole has two of that suit. On the river a flush outranks a full house in `_VAL`, and there is no draw bonus, so the river prefix criticism is about nuts and air, not about full houses ranking above flushes.
 
 Evidence: `_top`, `_cap`, and `_range_weights` implement exactly that prefix (`agent.py:522-547`). The three patched bugs were false positions inside this scalar. Fixing the draw rules makes the scalar less wrong. It does not add a second mode. The 121 pool extensions in 80 hands against a pot-raiser show the weights are narrow enough to matter. They do not show the shape is right. The monotone/connected pot-raise probe lost to both bots (patched +9.589 bb/deal, CI [+8.269, +10.909]; original +9.541, CI [+8.236, +10.845]). The postflop pot-pressure probe also lost (patched +10.314, CI [+8.737, +11.890]; original +10.932, CI [+9.372, +12.491]). Neither is a proven exploit. Whether a polar opponent who mixes nuts and air beats this hero is still a hypothesis.
 
@@ -326,6 +363,16 @@ The engine allows only `RAISE_HALF` and `RAISE_POT` (and half can be bumped to t
 Evidence: the action set is `game.py` (identical to the starter). The choice rule is the EV loop in `_decide`. The unpatched hero's edge versus the maniac (+6.785) and versus the min-raiser (+7.994) shows it can answer both sizes against scripts that do not switch. It does not show a size-to-range plan. Whether mixing the two sizes by one scalar loses chips to a size-aware caller is a hypothesis.
 
 Test: force the patched hero to pot only when equity is above 0.65 or below 0.30, and to use half-pot otherwise, and play that variant against the same opponents and against the patched hero. Keep the three ranker fixes in both.
+
+## Independent audit
+
+Source: `../independent-final.log`, written against commit `5571729` only. It rechecked the two draw bugs and the emergency-history path. It did not time requests, fuzz illegal actions, or play a duplicate match.
+
+What it executed: the showdown evaluator (flush beats a full house, trips beat a straight, the wheel loses to 6-7-8-9-T, `omaha_score` matches an exhaustive 2+3 search, a royal on the board is not awarded, four sixes with two kings is a full house, 24 straight flushes). Action-history replay on 160 hands and 535 opponent actions, including blind initialization. The straight windows include A-6-7-8-9; the straight bug was the popcount add, not a missing wheel.
+
+Findings it confirmed, and what happened to them: the flush and straight ranker bugs and the batch percentile bug are the patches above. The emergency `hist_n` skip is finding 3b and is fixed. Impact it stated, and which still holds: the draw bugs change opponent ranking used by `_top`, not the pot awarded at showdown. The history skip changes the model only after `_cheap_decide` is already active.
+
+Not claimed from that log: a timeout defect, an illegal action, or a measured bb/deal.
 
 ## Reproducing a single defect
 
